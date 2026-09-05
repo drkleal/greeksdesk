@@ -25,9 +25,9 @@ export function createServer(password = process.env.DESK_PASSWORD) {
     }
     const header = req.headers.authorization || '';
     const supplied = header.startsWith('Basic ') ? Buffer.from(header.slice(6), 'base64').toString('utf8') : '';
-    if (!matches(supplied, `desk:${password}`)) {
+    if (!matches(supplied, `drkleal:${password}`)) {
       res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="GreeksDesk", charset="UTF-8"' });
-      return res.end('Sign in with username desk and your desk password.');
+      return res.end('Sign in with username drkleal and your desk password.');
     }
     if (!['GET', 'HEAD'].includes(req.method)) {
       res.writeHead(405, { Allow: 'GET, HEAD' });

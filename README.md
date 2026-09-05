@@ -17,7 +17,7 @@ Panel uploads, persistent read history, platform capture, AI analysis, live moni
 
 Deploy this repository with app name `greeksdesk`, internal port `8080`, shared CPU and 512 MB RAM. If that Fly app name is unavailable, change `app` in fly.toml to your actual Fly app name. The eventual custom domain can still be greeksdesk.drklealtrades.com.
 
-Set a strong `DESK_PASSWORD` as a Fly secret before opening the desk. Do not commit passwords or provider tokens. Browser sign-in username: `desk`. Without a configured password the page stays locked and displays setup instructions; the health endpoint remains available.
+Set a strong `DESK_PASSWORD` as a Fly secret before opening the desk. Do not commit passwords or provider tokens. Browser sign-in username: `drkleal`. Without a configured password the page stays locked and displays setup instructions; the health endpoint remains available.
 
 When using the Fly CLI: `fly secrets set DESK_PASSWORD=YOUR_PASSWORD` followed by `fly deploy`. Enter the real secret securely locally, never in a chat or repository. Use HTTPS for the deployed app.
 

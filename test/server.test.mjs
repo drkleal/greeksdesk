@@ -9,7 +9,7 @@ test('private preview is locked, health stays available, and authenticated page 
   try {
     assert.equal((await fetch(base + '/healthz')).status, 200);
     assert.equal((await fetch(base)).status, 401);
-    const headers = { Authorization: 'Basic ' + Buffer.from('desk:test-secret').toString('base64') };
+    const headers = { Authorization: 'Basic ' + Buffer.from('drkleal:test-secret').toString('base64') };
     const page = await fetch(base, { headers });
     assert.equal(page.status, 200);
     assert.match(await page.text(), /Design preview/);
