@@ -10,5 +10,13 @@ test('errors never return credential-bearing upstream messages and do not retry'
  const result=await check('optionsdepth','2026-09-04');assert.equal(result.ok,false);assert.ok(!JSON.stringify(result).includes('secret'));assert.equal(count,1);
 });
 test('timestamp check only calls non-unit timestamp endpoint',async()=>{
- const check=createProviderChecks({env:{OPTIONSDEPTH_API_KEY:'secret'},request:async(url)=>{assert.match(url,/intraday-timeslots/);return {ok:true,json:async()=>['2026-09-04T10:00:00']};}});assert.equal((await check('optionsdepth','2026-09-04')).count,1);
+ const check=createProviderChecks({env:{OPTIONSDEPTH_API_KEY:'secret'},request:async(url)=>{assert.match(url,/intraday-timeslots/);return {ok:true,json:async()=>({timeslots:['2026-09-04T10:00:00']})};}});assert.equal((await check('optionsdepth','2026-09-04')).count,1);
+});
+test('empty timestamp list succeeds; malformed response is identified separately from timeout',async()=>{
+ for(const [body,ok] of [[{timeslots:[]},true],[{timeslots:['bad-date']},false],[{},false]]){
+  const check=createProviderChecks({env:{OPTIONSDEPTH_API_KEY:'secret'},request:async()=>({ok:true,json:async()=>body})});
+  const result=await check('optionsdepth','2026-09-04');assert.equal(result.ok,ok);if(!ok)assert.match(result.message,/data format/);
+ }
+ const check=createProviderChecks({env:{OPTIONSDEPTH_API_KEY:'secret'},request:async()=>{throw new DOMException('private upstream text','TimeoutError');}});
+ assert.match((await check('optionsdepth','2026-09-04')).message,/timed out/);
 });
