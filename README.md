@@ -11,7 +11,17 @@ Private, independently hosted trading desk. This initial release serves the prop
 
 ## Not yet implemented
 
-Panel uploads, persistent read history, platform capture, AI analysis, live monitoring, and alerts. The recheck control only demonstrates the proposed presentation. Existing analysis apps are untouched.
+Panel uploads, persistent read history, platform capture, AI analysis, live monitoring, and alerts. The scenario recheck control only demonstrates the proposed presentation. Existing analysis apps are untouched.
+
+## Manual provider checks
+
+Open `/connections` after signing in as `drkleal`. Configure `QUANT_DATA_API_KEY` and `OPTIONSDEPTH_API_KEY` as Fly secrets. Never enter them into the webpage.
+
+Quant Data makes one SPX Net Drift request with a selected session date, all expirations and one-minute buckets. It rebuilds cumulative premium totals from the returned buckets. Compare against identical dashboard filters. Latest values may belong to an incomplete bucket.
+
+OptionsDepth only checks the documented non-unit-consuming intraday-timeslots endpoint. It does not yet retrieve paid exposure data or prove paid endpoint access. No background polling or automatic retry is enabled. A one-minute per-machine cache avoids immediate duplicate checks. This is not an account-wide spending cap.
+
+Provider calls are server-side, require authenticated manual POST requests and do not return upstream error bodies or API keys. Live credentials cannot be validated locally because they are stored only in Fly.io. Verify deployed responses before treating this as an operational integration. Neither connection check changes the historical scenario preview.
 
 ## Fly.io setup
 
