@@ -20,3 +20,10 @@ test('empty timestamp list succeeds; malformed response is identified separately
  const check=createProviderChecks({env:{OPTIONSDEPTH_API_KEY:'secret'},request:async()=>{throw new DOMException('private upstream text','TimeoutError');}});
  assert.match((await check('optionsdepth','2026-09-04')).message,/timed out/);
 });
+test('timestamp request includes documented parameters and exposes status without upstream content',async()=>{
+ const check=createProviderChecks({env:{OPTIONSDEPTH_API_KEY:'secret'},request:async(url,options)=>{
+  const parsed=new URL(url);assert.equal(parsed.searchParams.get('model'),'intraday');assert.equal(parsed.searchParams.get('date'),'2026-09-04');assert.equal(options.headers.Accept,'application/json');
+  return {ok:false,status:422,json:async()=>{throw Error('Must not read private error body');}};
+ }});
+ const result=await check('optionsdepth','2026-09-04');assert.match(result.message,/HTTP 422/);assert.equal(result.ok,false);
+});

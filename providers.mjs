@@ -15,15 +15,16 @@ export function createProviderChecks({ env = process.env, request = fetch } = {}
     try {
       const url = provider === 'quantdata'
         ? 'https://api.quantdata.us/v1/options/tool/net-drift'
-        : `https://api.optionsdepth.com/options-depth-api/v1/intraday-timeslots/?key=${encodeURIComponent(secret)}&date=${date}`;
-      const options = { signal: AbortSignal.timeout(20000), redirect: 'error' };
+        : `https://api.optionsdepth.com/options-depth-api/v1/intraday-timeslots/?key=${encodeURIComponent(secret)}&model=intraday&date=${date}`;
+      const options = { signal: AbortSignal.timeout(20000), redirect: 'error', headers: { Accept: 'application/json' } };
       if (provider === 'quantdata') Object.assign(options, {
         method: 'POST', headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionDate: date, aggregationPeriod: '1m', filter: { ticker: 'SPX' } })
       });
       const response = await request(url, options);
       if (!response.ok) {
-        result = { ok: false, status: response.status, message: [401,403].includes(response.status) ? 'Provider rejected access. Check your key and subscription.' : response.status === 429 ? 'Provider rate limit reached. No automatic retry was made.' : 'Provider could not complete the request. No automatic retry was made.' };
+        const explanation = [401,403].includes(response.status) ? 'Access was rejected. Check the key and subscription.' : response.status === 429 ? 'Rate limit reached.' : [400,422].includes(response.status) ? 'The request parameters were rejected.' : response.status === 404 ? 'The requested endpoint or resource was not found.' : response.status >= 500 ? 'The provider or an intermediary returned a server error.' : 'The request was not completed.';
+        result = { ok: false, status: response.status, message: `HTTP ${response.status}: ${explanation} No automatic retry was made.` };
       } else {
         stage = 'decode';
         const data = await response.json();
