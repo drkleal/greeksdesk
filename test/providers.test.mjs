@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createProviderChecks} from '../providers.mjs';
 test('Gamma request stays scoped, strips extra fields, caches duplicates and rejects invalid ranges',async()=>{
  let requests=0;const check=createProviderChecks({env:{OPTIONSDEPTH_API_KEY:'private'},request:async(url)=>{
-  requests++;const query=new URL(url).searchParams;assert.equal(query.get('ticker'),'SPX');assert.equal(query.get('type'),'gamma');assert.equal(query.get('date_time'),'2026-09-04T16:00:00');
+  requests++;const query=new URL(url).searchParams;assert.equal(query.get('ticker'),'SPX');assert.equal(query.get('type'),'gamma');assert.equal(query.get('date_time'),'2026-09-04 16:00:00');
   return {ok:true,json:async()=>[{price:7720,value:-3,effectiveDatetime:'2026-09-04T16:00:00',privateField:'do not return'}]};
  }});
  const selection={slot:'2026-09-04T16:00:00',min:7650,max:7800};const result=await check('optionsdepth-gamma','2026-09-04',selection);
@@ -37,3 +37,4 @@ test('timestamp request includes documented parameters and exposes status withou
  }});
  const result=await check('optionsdepth','2026-09-04');assert.match(result.message,/HTTP 422/);assert.equal(result.ok,false);
 });
+

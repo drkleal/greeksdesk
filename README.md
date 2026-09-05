@@ -1,42 +1,29 @@
 # GreeksDesk
 
-Private, independently hosted trading desk. This initial release serves the proposed interactive chart layout. It is a design preview, not a live trading-analysis system.
+Private scenario desk at greeksdesk.drklealtrades.com. Sign in as drkleal using DESK_PASSWORD.
 
-## Included
+## Working desk
 
-- Dark chart with colorful upside, downside, and neutral scenarios.
-- Supporting exposure bars and source explanations.
-- Clearly labeled historical example; no live market data or generated probabilities.
-- Password-protected page, health check, Dockerfile, and Fly.io configuration.
+Choose a session date, then Update data. Net Drift and model timestamp availability are fetched on demand. Optional Gamma uses one paid heatmap request near SPX (plus provider caching). Analyze selected evidence sends the selected results and chart images to OpenAI and creates a conditional map with at most six source-linked levels. Missing evidence is shown rather than filled with historical example levels.
 
-## Not yet implemented
+The default map uses SPX. ES requires a user-supplied ES-minus-SPX basis; it is not a futures quote feed. The historical design remains at /preview. Connection diagnostics remain at /connections.
 
-Panel uploads, persistent read history, platform capture, AI analysis, live monitoring, and alerts. The scenario recheck control only demonstrates the proposed presentation. Existing analysis apps are untouched.
+Share chart tab uses the browser's screen-sharing picker. While sharing is active, each data update captures the selected surface. Attach or paste PNG/JPEG/WebP images as an alternative. Source URLs open the original platform; a URL does not grant access to signed-in charts. Capture time is not market-data time. Up to four images per read are resized locally before analysis.
 
-## Manual provider checks
+Auto is OFF on page load. It runs every 5 or 10 minutes for a selected bounded session, while the page is visible and using today's New York date. Enable Gamma and/or analysis explicitly to include their costs. Auto stops after a failure, hidden page or session limit. This is a browser session, not a hosted background collector. It does not trade or send alerts.
 
-The connections page now offers Update now (one cycle) and a timed Auto updates switch, default OFF. A cycle covers Quant Data Net Drift and OptionsDepth timestamp availability only. Paid exposure requests are excluded from auto mode until live values and usage are validated. Auto mode requires today's New York date, a visible page, a selected interval (1/5/10 minutes), and a bounded session length (1h/2h/6.5h). It stops on errors, empty responses, date change, hidden page or session limit. This is a browser-tab loop, not an independent background scheduler. No screenshots or generated scenarios are updated by these controls.
+Latest 20 reads, including selected chart images, are stored in this browser's IndexedDB on this device; download a read to retain a portable copy. No cross-device history is implemented.
 
-Open `/connections` after signing in as `drkleal`. Configure `QUANT_DATA_API_KEY` and `OPTIONSDEPTH_API_KEY` as Fly secrets. Never enter them into the webpage.
+## Secrets and deployment
 
-Quant Data makes one SPX Net Drift request with a selected session date, all expirations and one-minute buckets. It rebuilds cumulative premium totals from the returned buckets. Compare against identical dashboard filters. Latest values may belong to an incomplete bucket.
+Fly secrets: DESK_PASSWORD, QUANT_DATA_API_KEY, OPTIONSDEPTH_API_KEY, OPENAI_API_KEY. Optional OPENAI_MODEL overrides gpt-5.4-mini. Never place keys in browser code, source control or chat. OpenAI requests use store:false and include only selected market inputs, images and the prior same-session summary. The app does not fetch arbitrary chart URLs.
 
-OptionsDepth initially checks the documented non-unit-consuming intraday-timeslots endpoint. A separate explicit button retrieves one paid SPX Gamma heatmap sample using a selected timestamp and price range of up to 300 points. Units are not yet verified; compare the provider usage counter before and after. Heatmap prices are not assumed to be strikes or ES levels. Model units, timestamp semantics, and live values must be compared against the platform before further interpretation. No background polling or automatic retry is enabled. Timestamp checks cache for one minute and identical Gamma selections for ten minutes per machine; this is not an account-wide spending cap. Multiple machines can make separate requests.
+Pushes to main run Node tests and deploy via .github/workflows/fly.yml, using GitHub's FLY_API_TOKEN secret. /healthz is public; app and API routes require authentication. Runtime is Node 22 on Fly, internal port 8080, 512MB.
 
-Provider calls are server-side, require authenticated manual POST requests and do not return upstream error bodies or API keys. Live credentials cannot be validated locally because they are stored only in Fly.io. Verify deployed responses before treating this as an operational integration. Neither connection check changes the historical scenario preview.
+Run node --test locally. npm start requires DESK_PASSWORD. No npm dependencies.
 
-## Fly.io setup
+## Interpretation and usage limits
 
-Deploy this repository with app name `greeksdesk`, internal port `8080`, shared CPU and 512 MB RAM. If that Fly app name is unavailable, change `app` in fly.toml to your actual Fly app name. The eventual custom domain can still be greeksdesk.drklealtrades.com.
+Model output is conditional interpretation, not guaranteed chart extraction or validated trading signals. Check level provenance, price response, timestamp and expiry scope. Signed premium is not automatically directional buying/selling; Gamma heatmap coordinates are not automatically strikes or support/resistance. Generated ES conversions rely on the entered basis.
 
-Set a strong `DESK_PASSWORD` as a Fly secret before opening the desk. Do not commit passwords or provider tokens. Browser sign-in username: `drkleal`. Without a configured password the page stays locked and displays setup instructions; the health endpoint remains available.
-
-When using the Fly CLI: `fly secrets set DESK_PASSWORD=YOUR_PASSWORD` followed by `fly deploy`. Enter the real secret securely locally, never in a chat or repository. Use HTTPS for the deployed app.
-
-The domain is not connected by this commit. GitHub push does not itself provision Fly.io or GoDaddy DNS. No AI key is required for this preview.
-
-To increase memory later, update `memory` in fly.toml, then redeploy. A dashboard-only change can be overwritten by this configuration.
-
-## Local use
-
-Requires Node.js 22 or newer. Set DESK_PASSWORD in your local environment, then `npm start`. Open http://localhost:8080. Run `npm test` for server checks.
+Provider caches and analysis concurrency limits apply per machine, not across the account. Separate tabs/devices/machines can incur separate costs. Paid API unit charges are set by the provider; the interface shows request counts rather than an invented dollar estimate. The app does not yet supply a hard account-wide spending cap, live ES/NQ feed, independent browser collector, or persistent cloud history.

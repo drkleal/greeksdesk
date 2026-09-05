@@ -18,7 +18,7 @@ export function createProviderChecks({ env = process.env, request = fetch } = {}
       let url = provider === 'quantdata'
         ? 'https://api.quantdata.us/v1/options/tool/net-drift'
         : `https://api.optionsdepth.com/options-depth-api/v1/intraday-timeslots/?key=${encodeURIComponent(secret)}&model=intraday&date=${date}`;
-      if(exposure) url = 'https://api.optionsdepth.com/options-depth-api/v1/heatmap/?' + new URLSearchParams({key:secret,model:'intraday',date,ticker:'SPX',type:'gamma',date_time:selection.slot,min_price:String(selection.min),max_price:String(selection.max),is_upcoming_day:'false'});
+      if(exposure) url = 'https://api.optionsdepth.com/options-depth-api/v1/heatmap/?' + new URLSearchParams({key:secret,model:'intraday',date,ticker:'SPX',type:'gamma',date_time:selection.slot.replace('T',' '),min_price:String(selection.min),max_price:String(selection.max),is_upcoming_day:'false'});
       const options = { signal: AbortSignal.timeout(20000), redirect: 'error', headers: { Accept: 'application/json' } };
       if (provider === 'quantdata') Object.assign(options, {
         method: 'POST', headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },

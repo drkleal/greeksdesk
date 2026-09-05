@@ -12,7 +12,7 @@ test('private preview is locked, health stays available, and authenticated page 
     const headers = { Authorization: 'Basic ' + Buffer.from('drkleal:test-secret').toString('base64') };
     const page = await fetch(base, { headers });
     assert.equal(page.status, 200);
-    assert.match(await page.text(), /Design preview/);
+    assert.match(await page.text(), /scenario desk/);
     assert.equal((await fetch(base + '/server.mjs', { headers })).status, 404);
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
@@ -24,3 +24,4 @@ test('missing password fails closed', async () => {
     assert.equal((await fetch(`http://127.0.0.1:${server.address().port}`)).status, 503);
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
+
