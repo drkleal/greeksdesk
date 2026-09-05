@@ -1,21 +1,24 @@
 export function createProviderChecks({ env = process.env, request = fetch } = {}) {
   const pending = new Map();
   const recent = new Map();
-  return async function check(provider, date) {
-    if (!['quantdata', 'optionsdepth'].includes(provider)) throw new Error('Unknown provider');
+  return async function check(provider, date, selection = {}) {
+    if (!['quantdata', 'optionsdepth', 'optionsdepth-gamma'].includes(provider)) throw new Error('Unknown provider');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0,10) !== date) throw new Error('Choose a valid session date');
     const secret = env[provider === 'quantdata' ? 'QUANT_DATA_API_KEY' : 'OPTIONSDEPTH_API_KEY'];
     if (!secret) return { ok: false, message: 'API key is not configured in Fly.io.' };
-    const id = `${provider}:${date}`;
-    if (recent.has(id) && Date.now() - recent.get(id).time < 60000) return { ...recent.get(id).result, cached: true };
+    const exposure = provider === 'optionsdepth-gamma';
+    if (exposure && (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(selection.slot || '') || !selection.slot.startsWith(date+'T') || !Number.isFinite(Date.parse(selection.slot)) || !Number.isFinite(selection.min) || !Number.isFinite(selection.max) || selection.min <= 0 || selection.max <= selection.min || selection.max-selection.min > 300)) throw new Error('Invalid exposure selection');
+    const id = `${provider}:${date}:${exposure ? JSON.stringify(selection) : ''}`;
+    if (recent.has(id) && Date.now() - recent.get(id).time < (exposure ? 600000 : 60000)) return { ...recent.get(id).result, cached: true };
     if (pending.has(provider)) return { ok: false, message: 'A check is already running. Please wait.' };
     pending.set(provider, true);
     let result;
     let stage = 'request';
     try {
-      const url = provider === 'quantdata'
+      let url = provider === 'quantdata'
         ? 'https://api.quantdata.us/v1/options/tool/net-drift'
         : `https://api.optionsdepth.com/options-depth-api/v1/intraday-timeslots/?key=${encodeURIComponent(secret)}&model=intraday&date=${date}`;
+      if(exposure) url = 'https://api.optionsdepth.com/options-depth-api/v1/heatmap/?' + new URLSearchParams({key:secret,model:'intraday',date,ticker:'SPX',type:'gamma',date_time:selection.slot,min_price:String(selection.min),max_price:String(selection.max),is_upcoming_day:'false'});
       const options = { signal: AbortSignal.timeout(20000), redirect: 'error', headers: { Accept: 'application/json' } };
       if (provider === 'quantdata') Object.assign(options, {
         method: 'POST', headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
@@ -35,10 +38,14 @@ export function createProviderChecks({ env = process.env, request = fetch } = {}
           if (rows.some(r=>!Number.isFinite(r.timestamp)||!Number.isFinite(r.call)||!Number.isFinite(r.put))) throw new Error('Unexpected response');
           const last = rows.at(-1);
           result = { ok: true, provider: 'Quant Data', sessionDate: date, ticker: 'SPX', scope: 'All expirations; 1-minute buckets', count: rows.length, latestTimestamp: last ? new Date(last.timestamp).toISOString() : null, latestPrice: Number.isFinite(last?.price) ? last.price : null, callPremium: rows.reduce((s,r)=>s+r.call,0), putPremium: rows.reduce((s,r)=>s+r.put,0), message: rows.length ? 'Net Drift received. Totals are rebuilt from buckets, not added to a previous check. Compare with the same date and all-expiration filters on your platform.' : 'Request succeeded but returned no data for this date.' };
+        } else if(exposure) {
+          if(!Array.isArray(data) || data.some(r=>!Number.isFinite(r?.price)||!Number.isFinite(r?.value)||typeof r?.effectiveDatetime!=='string')) throw new Error('Unexpected response');
+          const rows=data.map(r=>({price:r.price,value:r.value,effectiveDatetime:r.effectiveDatetime})).sort((a,b)=>a.price-b.price);
+          result={ok:true,provider:'OptionsDepth Gamma',sessionDate:date,count:rows.length,rows,requestedSlot:selection.slot,range:[selection.min,selection.max],message:rows.length?'Gamma heatmap sample received. Compare the same SPX price range and model timestamp in OptionsDepth. These are model values, not ES trade levels; unit scaling and timestamp meaning still require verification.':'Request succeeded but returned no Gamma rows. This request may still consume API units.'};
         } else {
           const slots = data?.timeslots;
           if (!Array.isArray(slots) || slots.some(x=>typeof x !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(x) || !Number.isFinite(Date.parse(x)))) throw new Error('Unexpected response');
-          result = { ok: true, provider: 'OptionsDepth', sessionDate: date, count: slots.length, message: slots.length ? 'Timestamp list received. This confirms the timestamp endpoint responds; it does not yet verify paid exposure access or fresh market data.' : 'Request succeeded but returned no timestamps for this date.' };
+          result = { ok: true, provider: 'OptionsDepth', sessionDate: date, count: slots.length, slots, message: slots.length ? 'Timestamp list received. Choose one below to check a Gamma sample. Timestamp timezone is as supplied by OptionsDepth.' : 'Request succeeded but returned no timestamps for this date.' };
         }
       }
     } catch (error) {

@@ -16,7 +16,7 @@ export function createServer(password = process.env.DESK_PASSWORD) {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'no-referrer');
-    res.setHeader('Content-Security-Policy', "default-src 'none'; connect-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+    res.setHeader('Content-Security-Policy', "default-src 'none'; connect-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
     if (req.url === '/healthz') {
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       return res.end('ok');
@@ -37,7 +37,7 @@ export function createServer(password = process.env.DESK_PASSWORD) {
       }
       try {
         const query = new URL(req.url, 'http://localhost').searchParams;
-        const result = await checkProvider(query.get('provider'), query.get('date'));
+        const result = await checkProvider(query.get('provider'), query.get('date'), {slot:query.get('slot'),min:Number(query.get('min')),max:Number(query.get('max'))});
         res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(result));
       } catch {
         res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ok:false,message:'Select a valid provider and session date.'}));
@@ -47,13 +47,13 @@ export function createServer(password = process.env.DESK_PASSWORD) {
       res.writeHead(405, { Allow: 'GET, HEAD' });
       return res.end();
     }
-    if (!['/', '/index.html', '/connections'].includes(req.url)) {
+    if (!['/', '/index.html', '/connections', '/exposure.js'].includes(req.url)) {
       res.writeHead(404);
       return res.end('Not found');
     }
     try {
-      const page = await readFile(new URL(req.url === '/connections' ? './public/connections.html' : './public/index.html', import.meta.url));
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      const page = await readFile(new URL(req.url === '/exposure.js' ? './public/exposure.js' : req.url === '/connections' ? './public/connections.html' : './public/index.html', import.meta.url));
+      res.writeHead(200, { 'Content-Type': req.url === '/exposure.js' ? 'text/javascript; charset=utf-8' : 'text/html; charset=utf-8' });
       res.end(req.method === 'HEAD' ? undefined : page);
     } catch {
       res.writeHead(500);

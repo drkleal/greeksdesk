@@ -1,6 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createProviderChecks} from '../providers.mjs';
+test('Gamma request stays scoped, strips extra fields, caches duplicates and rejects invalid ranges',async()=>{
+ let requests=0;const check=createProviderChecks({env:{OPTIONSDEPTH_API_KEY:'private'},request:async(url)=>{
+  requests++;const query=new URL(url).searchParams;assert.equal(query.get('ticker'),'SPX');assert.equal(query.get('type'),'gamma');assert.equal(query.get('date_time'),'2026-09-04T16:00:00');
+  return {ok:true,json:async()=>[{price:7720,value:-3,effectiveDatetime:'2026-09-04T16:00:00',privateField:'do not return'}]};
+ }});
+ const selection={slot:'2026-09-04T16:00:00',min:7650,max:7800};const result=await check('optionsdepth-gamma','2026-09-04',selection);
+ assert.equal(result.ok,true);assert.equal(result.rows[0].value,-3);assert.ok(!JSON.stringify(result).includes('privateField'));
+ assert.equal((await check('optionsdepth-gamma','2026-09-04',selection)).cached,true);assert.equal(requests,1);
+ await assert.rejects(check('optionsdepth-gamma','2026-09-04',{...selection,max:9000}));assert.equal(requests,1);
+});
 test('drift recalculates sorted bucket totals and caches without extra requests',async()=>{
  let count=0;const check=createProviderChecks({env:{QUANT_DATA_API_KEY:'private-key'},request:async(url,options)=>{count++;assert.equal(JSON.parse(options.body).filter.ticker,'SPX');return {ok:true,json:async()=>({data:{'2000':{netCallPremium:4,netPutPremium:-2},'1000':{netCallPremium:3,netPutPremium:1}}})};}});
  const value=await check('quantdata','2026-09-04');assert.equal(value.callPremium,7);assert.equal(value.putPremium,-1);assert.equal((await check('quantdata','2026-09-04')).cached,true);assert.equal(count,1);

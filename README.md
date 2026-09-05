@@ -19,7 +19,7 @@ Open `/connections` after signing in as `drkleal`. Configure `QUANT_DATA_API_KEY
 
 Quant Data makes one SPX Net Drift request with a selected session date, all expirations and one-minute buckets. It rebuilds cumulative premium totals from the returned buckets. Compare against identical dashboard filters. Latest values may belong to an incomplete bucket.
 
-OptionsDepth only checks the documented non-unit-consuming intraday-timeslots endpoint. It does not yet retrieve paid exposure data or prove paid endpoint access. No background polling or automatic retry is enabled. A one-minute per-machine cache avoids immediate duplicate checks. This is not an account-wide spending cap.
+OptionsDepth initially checks the documented non-unit-consuming intraday-timeslots endpoint. A separate explicit button retrieves one paid SPX Gamma heatmap sample using a selected timestamp and price range of up to 300 points. Units are not yet verified; compare the provider usage counter before and after. Heatmap prices are not assumed to be strikes or ES levels. Model units, timestamp semantics, and live values must be compared against the platform before further interpretation. No background polling or automatic retry is enabled. Timestamp checks cache for one minute and identical Gamma selections for ten minutes per machine; this is not an account-wide spending cap. Multiple machines can make separate requests.
 
 Provider calls are server-side, require authenticated manual POST requests and do not return upstream error bodies or API keys. Live credentials cannot be validated locally because they are stored only in Fly.io. Verify deployed responses before treating this as an operational integration. Neither connection check changes the historical scenario preview.
 
