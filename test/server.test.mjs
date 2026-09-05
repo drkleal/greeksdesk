@@ -25,3 +25,9 @@ test('missing password fails closed', async () => {
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
 
+
+test('new desk and analysis routes preserve authentication and reject cross-site analysis',async()=>{
+ const server=createServer('test-secret');await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const base=`http://127.0.0.1:${server.address().port}`;
+ const headers={Authorization:'Basic '+Buffer.from('drkleal:test-secret').toString('base64')};
+ try{assert.equal((await fetch(base+'/api/config')).status,401);assert.equal((await fetch(base+'/api/analyze',{method:'POST',headers})).status,403);assert.equal((await fetch(base+'/api/analyze',{method:'POST',headers:{...headers,'X-GreeksDesk-Action':'manual-check','sec-fetch-site':'cross-site'},body:'{}'})).status,403);const css=await fetch(base+'/desk.css',{headers});assert.match(css.headers.get('content-type'),/text\/css/);const preview=await fetch(base+'/preview',{headers});assert.match(await preview.text(),/Design preview/);const result=await fetch(base+'/api/analyze',{method:'POST',headers:{...headers,'X-GreeksDesk-Action':'manual-check'},body:JSON.stringify({date:'2026-09-04',instrument:'SPX',sources:[{id:'quantdata',title:'Price',sessionDate:'2026-09-04',data:{ticker:'SPX',latestPrice:7717.81,latestTimestamp:'2026-09-04T20:59:00Z'}}]})});assert.equal((await result.json()).model,'source-reference-summary');}finally{await new Promise(resolve=>server.close(resolve));}
+});

@@ -41,7 +41,7 @@ export function referenceRead(packet){
  for(const source of packet.sources){
   const d=source.data;
   if(d?.ticker==='SPX'&&Number.isFinite(d.latestPrice)){
-   add(source,d.latestPrice,'Last observed SPX price',`SPX ${d.latestPrice} at ${d.latestTimestamp}. This is the last supplied observation, not a streaming quote.`);
+   add(source,d.latestPrice,packet.instrument==='ES'?'ES equivalent of observed SPX':'Last observed SPX price',`SPX ${d.latestPrice} at ${d.latestTimestamp}. This is the last supplied observation, not a streaming quote.`);
    descriptions.push({id:source.id,shows:`Reported signed call premium: ${d.callPremium}; signed put premium: ${d.putPremium}. ${d.scope||''}`,importance:'These signed totals alone do not establish bullish or bearish intent.',lookFor:'Match date and expiry filters and inspect the actual price/flow path.'});
   }else if(Array.isArray(d?.rows)){
    const rows=d.rows.filter(r=>Number.isFinite(r.price)&&Number.isFinite(r.value));

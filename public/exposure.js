@@ -29,7 +29,7 @@ gammaButton.addEventListener('click',async()=>{
   if(!result.ok)return;
   out.textContent+='\nRequested model timestamp: '+result.requestedSlot+' (provider timezone)\nSPX range: '+result.range.join('–')+' · '+result.count+' rows\nRetrieved: '+new Date(result.checkedAt).toLocaleString();
   const largest=Math.max(1,...result.rows.map(r=>Math.abs(r.value)));
-  const head=document.createElement('tr');for(const label of ['SPX price','Gamma model value','Relative size','Effective time returned']){const cell=document.createElement('th');cell.textContent=label;head.append(cell);}table.append(head);
+  const head=document.createElement('tr');for(const label of ['SPX price','Gamma model value','Relative size','Returned model time']){const cell=document.createElement('th');cell.textContent=label;head.append(cell);}table.append(head);
   for(const row of result.rows){const tr=document.createElement('tr');const price=document.createElement('td');price.textContent=row.price.toLocaleString();const value=document.createElement('td');value.textContent=row.value.toLocaleString(undefined,{maximumFractionDigits:6});value.style.color=row.value<0?'#ff668e':'#20ffc0';const graphic=document.createElement('td');const bar=document.createElement('span');bar.className='gamma-bar';bar.style.width=(Math.abs(row.value)/largest*100)+'%';bar.style.background=row.value<0?'#ff668e':'#20ffc0';graphic.append(bar);const time=document.createElement('td');time.textContent=row.effectiveDatetime;tr.append(price,value,graphic,time);table.append(tr);}
  }catch{out.textContent='Unable to load the sample. No automatic retry was made.';}finally{gammaPending=false;slotSelect.disabled=false;min.disabled=false;max.disabled=false;gammaButton.disabled=!slotSelect.value;}
 });
