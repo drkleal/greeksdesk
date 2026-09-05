@@ -16,6 +16,6 @@ export function renderMap(host,analysis,instrument,onSelect){
  for(const s of analysis.scenarios){const from=levels.find(l=>l.id===s.triggerId),to=levels.find(l=>l.id===s.targetId);if(!from||s.status==='insufficient')continue;const x=s.direction==='up'?450:s.direction==='down'?590:690,start=y(from.price),end=to?y(to.price):Math.max(25,Math.min(375,start+(s.direction==='up'?-38:s.direction==='down'?38:0)));svg.append(svgNode('path',{d:`M ${x} ${start} L ${x+35} ${(start+end)/2} L ${x+65} ${end}`,fill:'none',stroke:s.direction==='up'?'#22efb6':s.direction==='down'?'#ff5788':'#ffdc68','stroke-width':3,'stroke-dasharray':'6 4','marker-end':'url(#arrow-'+s.direction+')'}));if(!to){const note=svgNode('text',{x:x+70,y:end+4});note.textContent='if confirmed';svg.append(note);}}
  const footer=svgNode('text',{x:24,y:408});footer.textContent='Conditional paths · '+instrument+' price coordinates · not a time axis';svg.append(footer);host.append(svg);
 }
-export function sourceLink(url,label='Open original chart ↗'){
+export function sourceLink(url,label='Open source platform ↗'){
  try{const parsed=new URL(url);if(!['https:','http:'].includes(parsed.protocol)||parsed.username||parsed.password)return null;const a=node('a',label);a.href=parsed.href;a.target='_blank';a.rel='noopener noreferrer';return a;}catch{return null;}
 }
