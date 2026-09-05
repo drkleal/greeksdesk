@@ -62,14 +62,14 @@ export function createServer(password = process.env.DESK_PASSWORD) {
       res.writeHead(405, { Allow: 'GET, HEAD' });
       return res.end();
     }
-    const scripts = {'/desk.mjs':'./public/desk.mjs','/desk.css':'./public/desk.css','/map.mjs':'./public/map.mjs','/capture.mjs':'./public/capture.mjs','/exposure.js':'./public/exposure.js','/connections.mjs':'./public/connections.mjs','/update-loop.mjs':'./public/update-loop.mjs'};
-    if (!['/', '/index.html', '/preview', '/connections', ...Object.keys(scripts)].includes(req.url)) {
+    const scripts = {'/connector.mjs':'./public/connector.mjs','/desk.mjs':'./public/desk.mjs','/desk.css':'./public/desk.css','/map.mjs':'./public/map.mjs','/capture.mjs':'./public/capture.mjs','/exposure.js':'./public/exposure.js','/connections.mjs':'./public/connections.mjs','/update-loop.mjs':'./public/update-loop.mjs'};
+    if (!['/', '/index.html', '/preview', '/connections', '/connector', '/chart-connector.zip', ...Object.keys(scripts)].includes(req.url)) {
       res.writeHead(404);
       return res.end('Not found');
     }
     try {
-      const page = await readFile(new URL(scripts[req.url] || (req.url === '/connections' ? './public/connections.html' : req.url === '/preview' ? './public/index.html' : './public/desk.html'), import.meta.url));
-      res.writeHead(200, { 'Content-Type': req.url.endsWith('.css') ? 'text/css; charset=utf-8' : scripts[req.url] ? 'text/javascript; charset=utf-8' : 'text/html; charset=utf-8' });
+      const page = await readFile(new URL(scripts[req.url] || (req.url === '/connector' ? './public/connector.html' : req.url === '/chart-connector.zip' ? './public/chart-connector.zip' : req.url === '/connections' ? './public/connections.html' : req.url === '/preview' ? './public/index.html' : './public/desk.html'), import.meta.url));
+      res.writeHead(200, { 'Content-Type': req.url === '/chart-connector.zip' ? 'application/zip' : req.url.endsWith('.css') ? 'text/css; charset=utf-8' : scripts[req.url] ? 'text/javascript; charset=utf-8' : 'text/html; charset=utf-8' });
       res.end(req.method === 'HEAD' ? undefined : page);
     } catch {
       res.writeHead(500);

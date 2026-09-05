@@ -1,0 +1,11 @@
+{
+  "manifest_version":3,
+  "name":"GreeksDesk Chart Connector",
+  "version":"0.1.0",
+  "description":"Capture your selected Quant Data and OptionsDepth chart tabs for your private GreeksDesk app.",
+  "minimum_chrome_version":"118",
+  "permissions":["debugger","tabs","storage"],
+  "background":{"service_worker":"background.mjs","type":"module"},
+  "action":{"default_popup":"popup.html","default_title":"Connect charts to GreeksDesk"},
+  "content_scripts":[{"matches":["https://greeksdesk.drklealtrades.com/*","https://greeksdesk.fly.dev/*"],"js":["bridge.js"],"run_at":"document_start","all_frames":false}]
+}

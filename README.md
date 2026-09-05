@@ -29,3 +29,11 @@ Model output is conditional interpretation, not guaranteed chart extraction or v
 Provider caches and analysis concurrency limits apply per machine, not across the account. Separate tabs/devices/machines can incur separate costs. Paid API unit charges are set by the provider; the interface shows request counts rather than an invented dollar estimate. The app does not yet supply a hard account-wide spending cap, live ES/NQ feed, independent browser collector, or persistent cloud history.
 
 Data-only reads use a deterministic source summary without an OpenAI call. They show observed price and Gamma extrema, and leave scenarios insufficient until chart evidence is supplied. Gamma multi-time responses are reduced to the latest returned time at or before the requested timestamp; time slices are never summed.
+
+## Browser chart connector
+
+The optional unpacked Chrome extension in `browser-connector/` captures up to four explicitly selected chart tabs in the same Chrome profile. Download the authenticated `/chart-connector.zip` or load the folder directly via chrome://extensions. Setup is documented at `/connector`. It requires a one-time user installation; it is not silently installed by the app. Select charts again after a browser restart.
+
+Update & analyze captures selected chart viewports, refreshes API sources, and requests analysis. Auto captures on the existing bounded schedule; AI analysis remains opt-in. Selected charts must remain open, signed in and rendered. This does not capture off-screen panels or turn a provider URL into an embedded live panel. Level evidence can open the saved capture in an in-app dialog; the external platform link is separate.
+
+The extension uses Chrome debugger solely for Page.captureScreenshot, validates supported chart URLs before and after capture, and detaches afterward. It does not read cookies or API secrets, activate tabs, navigate, or trade. Browser end-to-end capture still requires verification after installation.

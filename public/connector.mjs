@@ -1,0 +1,3 @@
+const pending=new Map();
+window.addEventListener('message',event=>{if(event.source!==window||event.origin!==location.origin||event.data?.channel!=='greeksdesk-connector-response')return;const job=pending.get(event.data.id);if(job){clearTimeout(job.timer);pending.delete(event.data.id);job.resolve(event.data.result);}});
+export function connectorRequest(type){return new Promise((resolve,reject)=>{const id=crypto.randomUUID(),timer=setTimeout(()=>{pending.delete(id);reject(Error('Chart connector did not respond. Install it in this browser, then reload GreeksDesk.'));},type==='capture'?45000:3000);pending.set(id,{resolve,timer});window.postMessage({channel:'greeksdesk-connector-request',id,type},location.origin);});}
