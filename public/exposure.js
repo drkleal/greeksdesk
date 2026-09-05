@@ -1,11 +1,13 @@
 const slotSelect=document.getElementById('gamma-slot');
 const gammaButton=document.getElementById('gamma-check');
 window.setGammaSlots=(slots,session)=>{
+ const previousSlot=slotSelect.value;
  slotSelect.replaceChildren();
  for(const slot of slots.filter(s=>s.startsWith(session+'T')).sort()){
   const option=document.createElement('option');option.value=slot;option.textContent=slot.replace('T',' ');slotSelect.append(option);
  }
  gammaButton.disabled=!slotSelect.options.length;
+ if(Array.from(slotSelect.options).some(option=>option.value===previousSlot))slotSelect.value=previousSlot;
  slotSelect.dataset.session=session;
 };
 document.getElementById('date').addEventListener('change',()=>{slotSelect.replaceChildren();gammaButton.disabled=true;document.getElementById('gamma-output').textContent='Date changed. Check OptionsDepth timestamps again.';document.getElementById('gamma-table').replaceChildren();});

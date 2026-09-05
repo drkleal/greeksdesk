@@ -47,13 +47,14 @@ export function createServer(password = process.env.DESK_PASSWORD) {
       res.writeHead(405, { Allow: 'GET, HEAD' });
       return res.end();
     }
-    if (!['/', '/index.html', '/connections', '/exposure.js'].includes(req.url)) {
+    const scripts = {'/exposure.js':'./public/exposure.js','/connections.mjs':'./public/connections.mjs','/update-loop.mjs':'./public/update-loop.mjs'};
+    if (!['/', '/index.html', '/connections', ...Object.keys(scripts)].includes(req.url)) {
       res.writeHead(404);
       return res.end('Not found');
     }
     try {
-      const page = await readFile(new URL(req.url === '/exposure.js' ? './public/exposure.js' : req.url === '/connections' ? './public/connections.html' : './public/index.html', import.meta.url));
-      res.writeHead(200, { 'Content-Type': req.url === '/exposure.js' ? 'text/javascript; charset=utf-8' : 'text/html; charset=utf-8' });
+      const page = await readFile(new URL(scripts[req.url] || (req.url === '/connections' ? './public/connections.html' : './public/index.html'), import.meta.url));
+      res.writeHead(200, { 'Content-Type': scripts[req.url] ? 'text/javascript; charset=utf-8' : 'text/html; charset=utf-8' });
       res.end(req.method === 'HEAD' ? undefined : page);
     } catch {
       res.writeHead(500);

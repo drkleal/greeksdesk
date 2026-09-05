@@ -15,6 +15,8 @@ Panel uploads, persistent read history, platform capture, AI analysis, live moni
 
 ## Manual provider checks
 
+The connections page now offers Update now (one cycle) and a timed Auto updates switch, default OFF. A cycle covers Quant Data Net Drift and OptionsDepth timestamp availability only. Paid exposure requests are excluded from auto mode until live values and usage are validated. Auto mode requires today's New York date, a visible page, a selected interval (1/5/10 minutes), and a bounded session length (1h/2h/6.5h). It stops on errors, empty responses, date change, hidden page or session limit. This is a browser-tab loop, not an independent background scheduler. No screenshots or generated scenarios are updated by these controls.
+
 Open `/connections` after signing in as `drkleal`. Configure `QUANT_DATA_API_KEY` and `OPTIONSDEPTH_API_KEY` as Fly secrets. Never enter them into the webpage.
 
 Quant Data makes one SPX Net Drift request with a selected session date, all expirations and one-minute buckets. It rebuilds cumulative premium totals from the returned buckets. Compare against identical dashboard filters. Latest values may belong to an incomplete bucket.
