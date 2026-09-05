@@ -1,0 +1,26 @@
+name: Test and deploy GreeksDesk
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: greeksdesk-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run checks
+        run: node --test
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy GreeksDesk
+        run: flyctl deploy --remote-only --app greeksdesk
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
