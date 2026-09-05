@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createAnalyzer,validatePacket,validateAnalysis} from '../analysis.mjs';
-const packet={date:'2026-09-04',instrument:'SPX',sources:[{id:'gamma',title:'Gamma',sessionDate:'2026-09-04',data:{rows:[]}}]};
+const packet={date:'2026-09-04',instrument:'SPX',sources:[{id:'gamma',title:'Gamma',sessionDate:'2026-09-04',data:{rows:[]},image:'data:image/png;base64,aGVsbG8='}]};
 const valid={headline:'More evidence needed',summary:'No reliable levels.',gaps:['Need chart'],changes:[],levels:[],sources:[],scenarios:['up','down','neutral'].map(direction=>({direction,status:'insufficient',triggerId:null,targetId:null,condition:'Need levels',confirmation:'Need price response',invalidation:'Not established'}))};
 test('analysis rejects date mismatches, secret-bearing remote image URLs, and missing ES basis',()=>{
  assert.throws(()=>validatePacket({...packet,date:'2026-02-30'}));
@@ -21,4 +21,10 @@ test('analysis sends only selected inputs, disables storage, caches exact repeat
 test('no key, refusal or truncated analysis never applies a partial map',async()=>{
  assert.equal((await createAnalyzer({env:{}})(packet)).ok,false);
  for(const body of [{status:'incomplete'}, {status:'completed',output:[{content:[{type:'refusal',refusal:'No'}]}]}]){const analyze=createAnalyzer({env:{OPENAI_API_KEY:'secret'},request:async()=>({ok:true,json:async()=>body})});const r=await analyze(packet);assert.equal(r.ok,false);assert.ok(!JSON.stringify(r).includes('secret'));}
+});
+
+test('data-only reference read has exact extrema and no AI request or trading triggers',async()=>{
+ let calls=0;const analyze=createAnalyzer({env:{OPENAI_API_KEY:'private'},request:()=>{calls++;throw Error();}});
+ const r=await analyze({date:'2026-09-04',instrument:'SPX',sources:[{id:'gamma',title:'Gamma',sessionDate:'2026-09-04',data:{actualSlot:'2026-09-04T16:00:00',rows:[{price:7743,value:-1743},{price:7740.5,value:-1871},{price:7715.5,value:1174}]}}]});
+ assert.equal(calls,0);assert.equal(r.ok,true);assert.equal(r.analysis.levels.find(l=>l.label==='Negative Gamma reference').price,7740.5);assert.ok(r.analysis.scenarios.every(s=>s.status==='insufficient'&&s.triggerId===null));
 });

@@ -38,3 +38,10 @@ test('timestamp request includes documented parameters and exposes status withou
  const result=await check('optionsdepth','2026-09-04');assert.match(result.message,/HTTP 422/);assert.equal(result.ok,false);
 });
 
+
+test('Gamma separates returned time slices and never sums different model times',async()=>{
+ const {normalizeGamma}=await import('../providers.mjs');const selection={slot:'2026-09-04T17:00:00',min:7700,max:7800};
+ const r=normalizeGamma([{price:7720,value:100,sim_datetime:'2026-09-04T08:30:00'},{price:7720,value:-3,sim_datetime:'2026-09-04T16:00:00'},{price:7725,value:4,sim_datetime:'2026-09-04T16:00:00'},{price:7725,value:999,sim_datetime:'2026-09-05T16:00:00'}],'2026-09-04',selection);
+ assert.equal(r.rows.length,2);assert.equal(r.rows[0].value,-3);assert.equal(r.actualSlot,'2026-09-04T16:00:00');assert.equal(r.receivedCount,4);
+ assert.equal(normalizeGamma([{price:7720,value:5,sim_datetime:'2026-09-04T18:00:00'}],'2026-09-04',selection).rows.length,0);
+});

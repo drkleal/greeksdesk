@@ -1,3 +1,16 @@
+export function normalizeGamma(data,date,selection){
+ if(!Array.isArray(data))throw Error('Unexpected response');
+ const normalized=data.map(r=>{
+  const field=typeof r?.sim_datetime==='string'?'sim_datetime':'effectiveDatetime',time=r?.[field];
+  if(!Number.isFinite(r?.price)||!Number.isFinite(r?.value)||typeof time!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(time)||!Number.isFinite(Date.parse(time)))throw Error('Unexpected response');
+  return {price:r.price,value:r.value,effectiveDatetime:time,timestampField:field};
+ });
+ const eligible=normalized.filter(r=>r.effectiveDatetime.startsWith(date+'T')&&r.effectiveDatetime<=selection.slot&&r.price>=selection.min&&r.price<=selection.max);
+ const actualSlot=eligible.map(r=>r.effectiveDatetime).sort().at(-1)||null;
+ const rows=eligible.filter(r=>r.effectiveDatetime===actualSlot).sort((a,b)=>a.price-b.price);
+ if(new Set(rows.map(r=>r.price)).size!==rows.length)throw Error('Ambiguous duplicate price rows');
+ return {rows,actualSlot,receivedCount:data.length};
+}
 export function createProviderChecks({ env = process.env, request = fetch } = {}) {
   const pending = new Map();
   const recent = new Map();
@@ -39,9 +52,8 @@ export function createProviderChecks({ env = process.env, request = fetch } = {}
           const last = rows.at(-1);
           result = { ok: true, provider: 'Quant Data', sessionDate: date, ticker: 'SPX', scope: 'All expirations; 1-minute buckets', count: rows.length, latestTimestamp: last ? new Date(last.timestamp).toISOString() : null, latestPrice: Number.isFinite(last?.price) ? last.price : null, callPremium: rows.reduce((s,r)=>s+r.call,0), putPremium: rows.reduce((s,r)=>s+r.put,0), message: rows.length ? 'Net Drift received. Totals are rebuilt from buckets, not added to a previous check. Compare with the same date and all-expiration filters on your platform.' : 'Request succeeded but returned no data for this date.' };
         } else if(exposure) {
-          if(!Array.isArray(data) || data.some(r=>!Number.isFinite(r?.price)||!Number.isFinite(r?.value)||typeof r?.effectiveDatetime!=='string')) throw new Error('Unexpected response');
-          const rows=data.map(r=>({price:r.price,value:r.value,effectiveDatetime:r.effectiveDatetime})).sort((a,b)=>a.price-b.price);
-          result={ok:true,provider:'OptionsDepth Gamma',sessionDate:date,count:rows.length,rows,requestedSlot:selection.slot,range:[selection.min,selection.max],message:rows.length?'Gamma heatmap sample received. Compare the same SPX price range and model timestamp in OptionsDepth. These are model values, not ES trade levels; unit scaling and timestamp meaning still require verification.':'Request succeeded but returned no Gamma rows. This request may still consume API units.'};
+          const {rows,actualSlot,receivedCount}=normalizeGamma(data,date,selection);
+          result={ok:true,provider:'OptionsDepth Gamma',sessionDate:date,count:rows.length,rows,actualSlot,receivedCount,requestedSlot:selection.slot,range:[selection.min,selection.max],message:rows.length?'Gamma sample received. Only the latest returned model time at or before the requested time is shown: '+actualSlot+'. Earlier time slices are excluded, not added together. These are SPX heatmap coordinates; unit scaling still requires comparison with the platform.':'Request succeeded but returned no matching Gamma rows. This request may still consume API units.'};
         } else {
           const slots = data?.timeslots;
           if (!Array.isArray(slots) || slots.some(x=>typeof x !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(x) || !Number.isFinite(Date.parse(x)))) throw new Error('Unexpected response');

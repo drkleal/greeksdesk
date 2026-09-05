@@ -16,7 +16,7 @@ Latest 20 reads, including selected chart images, are stored in this browser's I
 
 ## Secrets and deployment
 
-Fly secrets: DESK_PASSWORD, QUANT_DATA_API_KEY, OPTIONSDEPTH_API_KEY, OPENAI_API_KEY. Optional OPENAI_MODEL overrides gpt-5.4-mini. Never place keys in browser code, source control or chat. OpenAI requests use store:false and include only selected market inputs, images and the prior same-session summary. The app does not fetch arbitrary chart URLs.
+Fly secrets: DESK_PASSWORD, QUANT_DATA_API_KEY, OPTIONSDEPTH_API_KEY, OPENAI_API_KEY. Optional OPENAI_MODEL overrides gpt-5.4. Never place keys in browser code, source control or chat. OpenAI requests use store:false and include only selected market inputs, images and the prior same-session summary. The app does not fetch arbitrary chart URLs.
 
 Pushes to main run Node tests and deploy via .github/workflows/fly.yml, using GitHub's FLY_API_TOKEN secret. /healthz is public; app and API routes require authentication. Runtime is Node 22 on Fly, internal port 8080, 512MB.
 
@@ -27,3 +27,5 @@ Run node --test locally. npm start requires DESK_PASSWORD. No npm dependencies.
 Model output is conditional interpretation, not guaranteed chart extraction or validated trading signals. Check level provenance, price response, timestamp and expiry scope. Signed premium is not automatically directional buying/selling; Gamma heatmap coordinates are not automatically strikes or support/resistance. Generated ES conversions rely on the entered basis.
 
 Provider caches and analysis concurrency limits apply per machine, not across the account. Separate tabs/devices/machines can incur separate costs. Paid API unit charges are set by the provider; the interface shows request counts rather than an invented dollar estimate. The app does not yet supply a hard account-wide spending cap, live ES/NQ feed, independent browser collector, or persistent cloud history.
+
+Data-only reads use a deterministic source summary without an OpenAI call. They show observed price and Gamma extrema, and leave scenarios insufficient until chart evidence is supplied. Gamma multi-time responses are reduced to the latest returned time at or before the requested timestamp; time slices are never summed.
