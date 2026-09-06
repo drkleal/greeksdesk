@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createAnalyzer,validatePacket,validateAnalysis} from '../analysis.mjs';
+test('corrected exposure calculations cannot become false before-and-after market movement',()=>{
+ const input={date:'2026-09-04',instrument:'ES',basis:null,sources:[{id:'qd-gamma',title:'Gamma',sessionDate:'2026-09-04',data:{normalizationVersion:2}}],previousEvidence:{date:'2026-09-04',checkedAt:'2026-09-06T10:00:00Z',sources:[{id:'qd-gamma',data:{strongest:[{strike:6180,net:0}]}}]}};
+ assert.equal(validatePacket(input).previousEvidence.sources[0].data.available,false);
+ input.previousEvidence.sources[0].data={normalizationVersion:2,strongest:[{strike:7720,net:54655}]};
+ assert.equal(validatePacket(input).previousEvidence.sources[0].data.strongest[0].net,54655);
+});
 const packet={date:'2026-09-04',instrument:'SPX',sources:[{id:'gamma',title:'Gamma',sessionDate:'2026-09-04',data:{rows:[]},image:'data:image/png;base64,aGVsbG8='}]};
 const valid={headline:'More evidence needed',summary:'No reliable levels.',gaps:['Need chart'],changes:[],levels:[],sources:[],scenarios:['up','down','neutral'].map(direction=>({direction,status:'insufficient',triggerId:null,targetId:null,condition:'Need levels',confirmation:'Need price response',invalidation:'Not established'}))};
 test('analysis rejects date mismatches, secret-bearing remote image URLs, and missing ES basis',()=>{

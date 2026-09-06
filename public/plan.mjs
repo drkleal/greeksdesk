@@ -32,6 +32,9 @@ export function decisionZones(levels, tolerance=1){
 export function setupRoom(s,levels,minimum=5){
  const from=levels.find(l=>l.id===s.triggerId),to=levels.find(l=>l.id===s.targetId);
  if(s.status!=="conditional"||!from||!to)return {eligible:false,text:"Watch only · no verified destination"};
+ if(from.role!=='structure'||to.role!=='structure'||(s.direction&&!pathDirectionValid(s,levels)))return {eligible:false,text:'Watch only · structural boundaries need verification'};
  const points=Math.abs(to.price-from.price);
+ const first=levels.filter(l=>l.role==='structure'&&Math.abs(l.price-from.price)>1&&(to.price>from.price?l.price>from.price&&l.price<to.price:l.price<from.price&&l.price>to.price)).sort((a,b)=>Math.abs(a.price-from.price)-Math.abs(b.price-from.price))[0];
+ if(first)return {eligible:false,points:Math.abs(first.price-from.price),text:'Watch only · '+priceText(Math.abs(first.price-from.price))+' points to intervening structure at '+priceText(first.price)+' before the proposed destination'};
  return {eligible:points>=minimum,points,text:points<=1?"Watch only · nearby prices are one decision zone":points<minimum?"Watch only · "+priceText(points)+" points to the next reference; under the "+minimum+"-point planning minimum":priceText(points)+" points to the reference · risk/reward not yet established"};
 }

@@ -1,31 +1,40 @@
 // Fixed, documented Quant Data endpoints. Credentials never leave the server response boundary.
 const object=v=>v&&typeof v==='object'&&!Array.isArray(v);
 const finite=Number.isFinite;
-function legs(call,put){return {call:finite(call)?call:null,put:finite(put)?put:null,net:finite(call)&&finite(put)?call+put:null};}
+// Quant Data omits a leg when it has no exposure. Explicit null/invalid values
+// remain unknown; never apply this endpoint-specific rule to another provider.
+function legs(row,callKey,putKey){
+ if(!object(row))throw Error('Invalid exposure cell');
+ const value=key=>!Object.hasOwn(row,key)?0:finite(row[key])?row[key]:null;
+ const call=value(callKey),put=value(putKey);
+ return {call,put,net:call!==null&&put!==null?call+put:null,omitted:Number(!Object.hasOwn(row,callKey))+Number(!Object.hasOwn(row,putKey))};
+}
 export function exposureSnapshot(payload){
  const root=payload?.data?.SPX;if(!object(root?.exposureMap))throw Error('Unrecognized exposure response');
- const strikes=new Map();let incomplete=0;
+ const strikes=new Map();let incomplete=0,omitted=0;
  for(const [expiry,rows] of Object.entries(root.exposureMap)){
   if(!object(rows))throw Error('Unrecognized expiry rows');
   for(const [strike,row]of Object.entries(rows)){
    if(!finite(Number(strike)))throw Error('Invalid strike');
-   const entry=legs(row?.callExposure,row?.putExposure);if(entry.net===null)incomplete++;
+   const entry=legs(row,'callExposure','putExposure');if(entry.net===null)incomplete++;omitted+=entry.omitted;
    const total=strikes.get(strike)||{strike:Number(strike),call:0,put:0,complete:true,expirations:[]};
    total.call+=entry.call??0;total.put+=entry.put??0;total.complete&&=entry.net!==null;total.expirations.push(expiry);strikes.set(strike,total);
   }
  }
  const all=[...strikes.values()].map(r=>({...r,net:r.complete?r.call+r.put:null}));
- return {stockPrice:finite(root.stockPrice)?root.stockPrice:null,strikeCount:all.length,incompleteLegPairs:incomplete,
+ const stockPrice=finite(root.stockPrice)?root.stockPrice:null;
+ return {normalizationVersion:2,stockPrice,strikeCount:all.length,incompleteLegPairs:incomplete,omittedZeroLegs:omitted,
   strongest:all.filter(r=>r.net!==null).sort((a,b)=>Math.abs(b.net)-Math.abs(a.net)).slice(0,12),
-  limitation:'All-expiration sums require both legs at every expiry. Incomplete strikes are excluded from rankings. Session latest snapshot; provider response supplies no observation timestamp.'};
+  nearby:stockPrice===null?[]:all.filter(r=>r.net!==null&&Math.abs(r.strike-stockPrice)<=60).sort((a,b)=>Math.abs(b.net)-Math.abs(a.net)).slice(0,12),nearbyBandPoints:60,
+  limitation:'Quant Data documents omitted legs as no exposure (zero). Explicit null or invalid legs remain unknown and exclude that strike from rankings. All expirations; nearby ranks are within 60 SPX points of stockPrice. Session latest snapshot; provider response supplies no observation timestamp.'};
 }
 export function intervalPath(payload){
  if(!object(payload?.data))throw Error('Unrecognized interval response');
  return Object.entries(payload.data).sort(([a],[b])=>Number(a)-Number(b)).slice(-12).map(([time,expiries])=>{
   if(!finite(Number(time))||!object(expiries))throw Error('Invalid interval');
-  let call=0,put=0,incomplete=0,pairs=0;
-  for(const rows of Object.values(expiries)){if(!object(rows))throw Error('Invalid interval rows');for(const row of Object.values(rows)){const l=legs(row?.CALL,row?.PUT);pairs++;if(l.net===null)incomplete++;else{call+=l.call;put+=l.put;}}}
-  return {timestamp:new Date(Number(time)).toISOString(),call:incomplete?null:call,put:incomplete?null:put,net:incomplete?null:call+put,pairs,incomplete};
+  let call=0,put=0,incomplete=0,pairs=0,omitted=0;
+  for(const rows of Object.values(expiries)){if(!object(rows))throw Error('Invalid interval rows');for(const row of Object.values(rows)){const l=legs(row,'CALL','PUT');pairs++;omitted+=l.omitted;if(l.net===null)incomplete++;else{call+=l.call;put+=l.put;}}}
+  return {timestamp:new Date(Number(time)).toISOString(),call:incomplete?null:call,put:incomplete?null:put,net:incomplete?null:call+put,pairs,incomplete,omittedZeroLegs:omitted};
  });
 }
 export function darkPoolLevels(payload){

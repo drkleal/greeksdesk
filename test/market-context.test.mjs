@@ -3,13 +3,26 @@ import assert from 'node:assert/strict';
 import {exposureSnapshot,intervalPath,darkPoolLevels,createMarketContext} from '../market-context.mjs';
 import {evidenceCoverage} from '../public/evidence.mjs';
 import {pathDirectionValid,levelDetails,decisionZones,setupRoom,quoteStatus} from '../public/plan.mjs';
-test('exposure ranks complete strikes without treating absent legs as zero',()=>{
+test('Quant Data documented omitted legs are zero and participate in strike ranks',()=>{
  const r=exposureSnapshot({data:{SPX:{stockPrice:7717,exposureMap:{'2026-09-04':{'7715':{callExposure:200,putExposure:-50},'7720':{callExposure:999}},'2026-09-11':{'7715':{callExposure:80,putExposure:-10}}}}}});
- assert.equal(r.strongest.length,1);assert.equal(r.strongest[0].net,220);assert.equal(r.incompleteLegPairs,1);assert.equal(r.strikeCount,2);
+ assert.equal(r.strongest.length,2);assert.equal(r.strongest[0].net,999);assert.equal(r.strongest[1].net,220);assert.equal(r.incompleteLegPairs,0);assert.equal(r.omittedZeroLegs,1);assert.equal(r.strikeCount,2);assert.equal(r.nearby.length,2);
 });
-test('interval snapshots remain separate and incomplete buckets cannot imply measured changes',()=>{
+test('interval snapshots remain separate and documented zero legs are included',()=>{
  const rows=intervalPath({data:{'2000':{expiry:{'10':{CALL:12,PUT:-2}}},'1000':{expiry:{'10':{CALL:4,PUT:-1}}},'3000':{expiry:{'10':{CALL:50}}}}});
- assert.deepEqual(rows.map(r=>r.net),[3,10,null]);assert.equal(rows[0].timestamp,'1970-01-01T00:00:01.000Z');
+ assert.deepEqual(rows.map(r=>r.net),[3,10,50]);assert.equal(rows[2].omittedZeroLegs,1);assert.equal(rows[0].timestamp,'1970-01-01T00:00:01.000Z');
+});
+
+test('a distant target cannot hide an intervening structural obstacle',()=>{
+ const levels=[{id:'start',price:7716,role:'structure'},{id:'near',price:7719.25,role:'structure'},{id:'far',price:7725.75,role:'structure'}];
+ const room=setupRoom({status:'conditional',direction:'up',triggerId:'start',targetId:'far'},levels);
+ assert.equal(room.eligible,false);assert.equal(room.points,3.25);assert.match(room.text,/intervening structure/);
+});
+
+test('explicit null and malformed exposure remain unknown, not documented zeros',()=>{
+ const r=exposureSnapshot({data:{SPX:{stockPrice:7717,exposureMap:{expiry:{'7715':{callExposure:200,putExposure:null},'7720':{callExposure:'999'},'7000':{putExposure:-20}}}}}});
+ assert.equal(r.incompleteLegPairs,2);assert.deepEqual(r.strongest.map(x=>x.strike),[7000]);assert.equal(r.nearby.length,0);
+ assert.equal(intervalPath({data:{'1000':{expiry:{'10':{CALL:50,PUT:null}}}}})[0].net,null);
+ assert.throws(()=>exposureSnapshot({data:{SPX:{exposureMap:{expiry:{'100':null}}}}}),/Invalid exposure/);
 });
 test('historical dark-pool context excludes request-time price',()=>{
  const r=darkPoolLevels({latestStockPrice:999,data:{'700':{notionalValue:5000,size:10,tradeCount:2}}});

@@ -9,7 +9,7 @@ Nine requests per uncached update; server results are reused for 60 seconds. All
 | Source | Request | Interpretation boundary |
 | --- | --- | --- |
 | Net Drift | One-minute net-drift buckets | Signed premium totals do not establish buying/selling intent. |
-| Gamma, Delta, Vanna, Charm | Four exposure-by-strike requests, RAW representation | Sum only complete call/put pairs across expirations. Return strongest complete strikes. These are model references, not automatic walls. No source observation time is supplied for these session snapshots. |
+| Gamma, Delta, Vanna, Charm | Four exposure-by-strike requests, RAW representation | Apply the documented zero-exposure meaning of omitted legs, then sum across expirations. Explicit null/invalid values remain unknown. Return strongest chain-wide and nearby strikes. These are model references, not automatic walls. No source observation time is supplied for these session snapshots. |
 | Gamma, Delta history | Two five-minute interval-map requests | Preserve the last twelve separate buckets. Do not sum time buckets into current exposure or assume their units equal RAW strike exposure. |
 | SPY dark-pool levels | One same-session date-range request | Transaction clusters are related-instrument context, not ES levels or directional intent. Omit request-time latestStockPrice from historical results. |
 | SPY dark-pool activity | One five-minute dark-flow request | Show recent activity and session notional total; do not infer dealer inventory or trade direction. |
@@ -34,7 +34,9 @@ Server verification on September 6 returned 1,379 ESU6 minute bars for September
 
 Level identities distinguish provider-named levels, observed price structure, unidentified drawings, and last quotes. The clean map uses matching Z1/Z2 decision-zone identifiers with the level key. Structural prices within one point form one zone. Unknown drawings and last quotes cannot establish structural scenario boundaries. Paths without a verified destination, or with less than five points of room to the nearest destination, are watch-only. Five points is a stated planning display minimum in response to the request to avoid tiny trade paths, not a claim that five points makes a trade worthwhile. References are retained even when their paths are withheld. Arrow target prices must agree with their direction. Spacing is schematic and explicitly labelled.
 
-Partial exposure feeds have a visible Partial data badge. Their findings remain reviewable; the badge never implies complete market coverage. A fresh price sample ages into Stale sample after twenty seconds in the browser, without triggering another request.
+Verification on September 6 found 5,283 omitted legs, no explicit nulls, and 561 valid strikes in the September 4 Gamma response. Following the documented omission semantics gives SPX 7720 net raw Gamma +54,655 and SPX 7715 −53,649. Earlier reads used an incorrect omission rule and must be rebuilt. Normalization versions prevent that correction from being reported as market movement.
+
+Truly partial exposure feeds have a visible Partial data badge. Their findings remain reviewable; the badge never implies complete market coverage. A fresh price sample ages into Stale sample after twenty seconds in the browser, without triggering another request.
 
 Scenario drivers link to source findings, including opposing evidence. Unavailable feeds and excluded panels cannot be marked as support; next-session models remain context. Earlier API observations are supplied for comparisons only within the same selected session and instrument; the analyst must also match filters, units and observation times. Repeated snapshots are not new market movement.
 
