@@ -1,6 +1,6 @@
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {validDate,nyTime,isCashObservation,cashSession} from './public/session.mjs';
+import {validDate,nyTime,isCashObservation,cashSession,esSessionDate,esSessionBounds} from './public/session.mjs';
 
 function marketClock(bar){
  const p=nyTime(bar.timestamp),hour=String(Math.floor(p.seconds/3600)).padStart(2,'0'),minute=String(Math.floor(p.seconds/60)%60).padStart(2,'0');
@@ -17,6 +17,23 @@ export function aggregateESBars(bars,minutes){
   g.high=Math.max(g.high,b.high);g.low=Math.min(g.low,b.low);g.close=b.close;g.volume+=b.volume;g.minuteCount++;g.observedThrough=b.end;g.complete=g.minuteCount===minutes;
  }
  return [...groups.values()].map(marketClock);
+}
+
+export function summarizePriorContext(context,contract,date,instrumentId){
+ if(!context?.available)return {available:false,message:context?.message||'Earlier ES history was not supplied.'};
+ const boundary=Date.parse(esSessionBounds(date).start),from=Date.parse(context.requestedFrom),through=Date.parse(context.through);
+ if(context.contract!==contract||context.dataset!=='GLBX.MDP3'||context.schema!=='ohlcv-1h'||!Number.isFinite(from)||!Number.isFinite(through)||through>boundary||from>=through||boundary-from>11*86400000||!Array.isArray(context.bars)||!context.bars.length||context.bars.length>=256)throw Error('Invalid earlier ES scope');
+ const groups=new Map(),times=new Set(),ids=new Set();
+ for(const b of [...context.bars].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp))){
+  const t=Date.parse(b.timestamp),end=Date.parse(b.end);
+  if(t<from||end>through||end-t!==3600000||t%3600000!==0||times.has(t)||!['open','high','low','close','volume','instrumentId'].every(k=>Number.isFinite(b[k]))||b.low<=0||b.low>Math.min(b.open,b.close)||b.high<Math.max(b.open,b.close,b.low)||b.volume<0||(instrumentId!==undefined&&b.instrumentId!==instrumentId))throw Error('Invalid earlier ES bars');
+  times.add(t);ids.add(b.instrumentId);const sessionDate=esSessionDate(b.timestamp),p=nyTime(b.timestamp);
+  if(sessionDate>=date||p.seconds>=17*3600&&p.seconds<18*3600)throw Error('Earlier ES bar overlaps a different session');
+  if(!groups.has(sessionDate))groups.set(sessionDate,[]);groups.get(sessionDate).push(marketClock(b));
+ }
+ if(ids.size!==1)throw Error('Mixed earlier ES contracts');
+ const sessions=[...groups.entries()].slice(-5).map(([sessionDate,bars])=>({sessionDate,open:bars[0].open,high:Math.max(...bars.map(b=>b.high)),low:Math.min(...bars.map(b=>b.low)),close:bars.at(-1).close,volume:bars.reduce((n,b)=>n+b.volume,0),from:bars[0].timestamp,through:bars.at(-1).end,barCount:bars.length,bars}));
+ return {available:true,contract,dataset:context.dataset,schema:context.schema,requestedFrom:context.requestedFrom,through:context.through,sessionCount:sessions.length,sessions,estimatedCostUSD:context.estimatedCostUSD??null,limitation:'Up to five earlier traded sessions from ten calendar days in this same unadjusted contract. Hourly trade aggregates; missing hours/days are not filled. High/low times locate an hour, not an exact trade. These are dated references, not current support/resistance, cash-session extrema or exchange settlements.'};
 }
 
 export function summarizeES(raw,now=Date.now()){
@@ -37,11 +54,13 @@ export function summarizeES(raw,now=Date.now()){
  const latest=q&&(!last||Date.parse(q.timestamp)>=Date.parse(last.end))?q:last?{price:last.close,timestamp:last.end,intervalStart:last.timestamp,kind:'Completed 1-minute trade bar'}:null;
  const age=latest?(now-Date.parse(latest.timestamp))/1000:null;
  if(age!==null&&age< -5)throw Error('Future ES observation');
+ let priorContext;try{priorContext=summarizePriorContext(raw.priorContext,raw.contract,raw.sessionDate,last?.instrumentId??q?.instrumentId);}catch{priorContext={available:false,message:'Earlier ES history failed its contract, date or price checks. Current-session data remains available.'};}
  return {ok:true,count:bars.length||1,available:true,ticker:'ES',contract:raw.contract,requestedSymbol:raw.requestedSymbol,dataset:raw.dataset,sessionDate:raw.sessionDate,checkedAt:new Date(now).toISOString(),
   latestPrice:latest?.price??null,latestTimestamp:latest?.timestamp??null,priceKind:latest?.kind??null,
-  freshness:q&&latest===q&&age>=0&&age<=20?'fresh':nyTime(now)?.date===raw.sessionDate?'stale':'historical',ageSeconds:age,
+  freshness:q&&latest===q&&age>=0&&age<=20?'fresh':esSessionDate(now)===raw.sessionDate?'stale':'historical',ageSeconds:age,
   session:stats(bars),cashSession:stats(cash),recentBars:bars.slice(-120).map(marketClock),averageTrueRange1m:ranges.length===14?ranges.reduce((n,x)=>n+x,0)/14:null,
   structureVersion:1,bars5m:aggregateESBars(bars,5),bars15m:aggregateESBars(bars,15),
+  priorContext,
   structureScope:'Full observed futures session in 5-minute and 15-minute bars; last 120 one-minute bars for local timing. Aggregate OHLCV uses only returned minute records. complete=false means not every minute slot is represented; observedThrough is the last supplied minute end. Session range describes past movement, not a forecast.',
   priceObservations:bars.map(b=>({price:b.close,timestamp:b.end})),messages:raw.messages||[],estimatedHistoryCostUSD:raw.estimatedHistoryCostUSD,
   limitation:'Unadjusted '+raw.contract+' prices. Session window: prior 18:00–17:00 New York. Bars describe observed prices, not exchange settlement. Completed bar closes have interval-end timestamps; no exact trade-time claim. A fresh price does not refresh an older scenario.'};
@@ -60,13 +79,23 @@ function worker(input,env){return new Promise(resolve=>{
 });}
 
 export function createDatabento({env=process.env,run=worker,now=Date.now}={}){
- const cache=new Map();let pending=null;
+ const cache=new Map(),contextCache=new Map();let pending=null;
  return async(date,symbol=env.DATABENTO_ES_SYMBOL||'ES.v.0')=>{
   if(!validDate(date)||!/^ES(?:\.v\.0|[HMUZ]\d{1,2})$/.test(symbol))throw Error('Select a valid ES contract and date.');
   if(!env.DATABENTO_API_KEY)return {ok:false,configured:false,message:'Databento key is not configured.'};
-  const key=date+'|'+symbol,old=cache.get(key),ttl=date===nyTime(now()).date?15000:3600000;
+  const key=date+'|'+symbol,old=cache.get(key),ttl=date===esSessionDate(now())?15000:3600000;
   if(old&&now()-old.at<ttl){const result=structuredClone(old.result);if(result.latestTimestamp){result.ageSeconds=(now()-Date.parse(result.latestTimestamp))/1000;if(result.freshness==='fresh'&&result.ageSeconds>20)result.freshness='stale';}return {...result,cached:true};}
   if(pending)return {ok:false,message:'An ES market-data read is already running.'};
-  pending=key;try{const raw=await run({date,symbol},env),result=summarizeES(raw,now());if(result.ok){cache.set(key,{at:now(),result});if(cache.size>8)cache.delete(cache.keys().next().value);}return result;}catch{return {ok:false,message:'ES data failed contract or timestamp validation.'};}finally{pending=null;}
+  pending=key;try{
+   const prior=contextCache.get(key),reuse=prior&&now()-prior.at<86400000;
+   const raw=await run({date,symbol,...(reuse?{cached_context_contract:prior.contract}:{})},env);
+   if(raw.contextReused&&reuse&&raw.contract===prior.contract)raw.priorContext=structuredClone(prior.raw);
+   const result=summarizeES(raw,now());
+   if(result.ok){
+    if(result.priorContext.available&&!raw.contextReused){contextCache.set(key,{at:now(),contract:raw.contract,raw:structuredClone(raw.priorContext)});if(contextCache.size>8)contextCache.delete(contextCache.keys().next().value);}
+    result.priorContext.cached=!!raw.contextReused&&!!reuse&&raw.contract===prior.contract;
+    cache.set(key,{at:now(),result});if(cache.size>8)cache.delete(cache.keys().next().value);
+   }return result;
+  }catch{return {ok:false,message:'ES data failed contract or timestamp validation.'};}finally{pending=null;}
  };
 }

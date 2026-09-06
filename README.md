@@ -10,13 +10,13 @@ The default map uses ES. Paste an original ES price chart to build native ES sce
 
 Share chart tab uses the browser's screen-sharing picker. While sharing is active, each data update captures the selected surface. Attach or paste PNG/JPEG/WebP images as an alternative. Source URLs open the original platform; a URL does not grant access to signed-in charts. Capture time is not market-data time. Up to four images per read are resized locally before analysis.
 
-Auto is OFF on page load. It runs every 5 or 10 minutes for a selected bounded session, while the tab stays open and using today's New York date; switching to the trading platform does not turn it off. Background browser throttling or computer sleep can delay cycles. Enable Gamma and/or analysis explicitly to include their costs. Auto stops after a failure, page close/reload or session limit. The wall-clock deadline is checked before every request; delayed timers never catch up by issuing a burst of requests. Manual updates use the same loop and replace its pending timer. This is a browser session, not a hosted background collector. It does not trade or send alerts.
+Auto is OFF on page load. It runs every 5 or 10 minutes for a selected bounded session, while the tab stays open and using the active session date (ES rolls to the following date at 18:00 New York); switching to the trading platform does not turn it off. Background browser throttling or computer sleep can delay cycles. Enable Gamma and/or analysis explicitly to include their costs. Auto stops after a failure, page close/reload or session limit. The wall-clock deadline is checked before every request; delayed timers never catch up by issuing a burst of requests. Manual updates use the same loop and replace its pending timer. This is a browser session, not a hosted background collector. It does not trade or send alerts.
 
 Latest 20 reads, including selected chart images, are stored in this browser's IndexedDB on this device; download a read to retain a portable copy. No cross-device history is implemented.
 
 ## Secrets and deployment
 
-Fly secrets: DESK_PASSWORD, QUANT_DATA_API_KEY, OPTIONSDEPTH_API_KEY, OPENAI_API_KEY. Optional OPENAI_MODEL overrides gpt-5.4. Never place keys in browser code, source control or chat. OpenAI requests use store:false and include only selected market inputs, images and the prior same-session summary. The app does not fetch arbitrary chart URLs.
+Fly secrets: DESK_PASSWORD, QUANT_DATA_API_KEY, OPTIONSDEPTH_API_KEY, OPENAI_API_KEY, DATABENTO_API_KEY. Optional OPENAI_MODEL overrides gpt-5.4. Never place keys in browser code, source control or chat. OpenAI requests use store:false and include only selected market inputs, images and the prior same-session summary. The app does not fetch arbitrary chart URLs.
 
 Pushes to main run Node tests and deploy via .github/workflows/fly.yml, using GitHub's FLY_API_TOKEN secret. /healthz is public; app and API routes require authentication. Runtime is Node 22 on Fly, internal port 8080, 512MB.
 
@@ -26,9 +26,9 @@ Run node --test locally. npm start requires DESK_PASSWORD. No npm dependencies.
 
 Model output is conditional interpretation, not guaranteed chart extraction or validated trading signals. Check level provenance, price response, timestamp and expiry scope. Signed premium is not automatically directional buying/selling; Gamma heatmap coordinates are not automatically strikes or support/resistance. Generated ES conversions rely on the displayed basis. The ES chart price card uses the screenshot observation, not a relabeled SPX API quote. OptionsDepth forward-session models remain planning context, with their displayed target date, rather than same-session observed ES levels.
 
-Provider caches and analysis concurrency limits apply per machine, not across the account. Separate tabs/devices/machines can incur separate costs. Paid API unit charges are set by the provider; the interface shows request counts rather than an invented dollar estimate. The app does not yet supply a hard account-wide spending cap, live ES/NQ feed, independent browser collector, or persistent cloud history.
+Provider caches and analysis concurrency limits apply per machine, not across the account. Separate tabs/devices/machines can incur separate costs. Paid API unit charges are set by the provider; the interface shows request counts rather than an invented dollar estimate. The app does not yet supply a hard account-wide spending cap, continuous ES tick stream, NQ feed, independent browser collector, or persistent cloud history.
 
-Data-only reads use a deterministic source summary without an OpenAI call. They show observed price and Gamma extrema, and leave scenarios insufficient until chart evidence is supplied. Gamma multi-time responses are reduced to the latest returned time at or before the requested timestamp; time slices are never summed.
+Without native ES bar history or chart images, data-only reads use a deterministic source summary without an OpenAI call. They show observed price and Gamma extrema, and leave scenarios insufficient until chart evidence is supplied. Gamma multi-time responses are reduced to the latest returned time at or before the requested timestamp; time slices are never summed.
 
 ## Browser chart connector
 

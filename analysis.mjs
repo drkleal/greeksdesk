@@ -1,13 +1,15 @@
 import {createHash} from 'node:crypto';
 import {validateChartContext} from './chart-context.mjs';
 import {enforceEvidenceScope,evidencePolicyVersion} from './public/evidence-policy.mjs';
+import {esSessionBounds} from './public/session.mjs';
 const str={type:'string'};
 const obj=properties=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
 const arr=items=>({type:'array',items});
 const instruments=['ES','SPX','SPY','NQ','QQQ','other','unknown'];
 const instrumentEvidence=['contract_header','price_axis','underlying_selector','user_confirmed','exposure_units_only','unknown'];
 const dateRoles=['observed_session','projected_session','unknown'];
-const levelSchema=obj({id:str,price:{type:'number'},label:str,role:{type:'string',enum:['structure','last_price','model_reference']},kind:{type:'string',enum:['support','resistance','gamma','delta','vanna','charm','dark_pool','reference','other']},identity:obj({category:{type:'string',enum:['provider','structure','drawing','quote']},name:str,sourceLabel:{type:['string','null']},description:str,derivation:str}),sourceIds:arr(str),panelIds:arr(str),evidence:str,watch:str,invalidation:str});
+const apiOriginSchema={anyOf:[{type:'null'},obj({sourceId:{type:'string',enum:['databento']},sessionDate:str,timeframe:{type:'string',enum:['1m','5m','15m','1h','session','cash_session']},timestamp:str,field:{type:'string',enum:['open','high','low','close']}})]};
+const levelSchema=obj({id:str,price:{type:'number'},label:str,role:{type:'string',enum:['structure','last_price','model_reference']},kind:{type:'string',enum:['support','resistance','gamma','delta','vanna','charm','dark_pool','reference','other']},identity:obj({category:{type:'string',enum:['provider','structure','drawing','quote']},name:str,sourceLabel:{type:['string','null']},description:str,derivation:str}),apiOrigin:apiOriginSchema,sourceIds:arr(str),panelIds:arr(str),evidence:str,watch:str,invalidation:str});
 const continuationSchema=obj({targetId:{type:['string','null']},condition:str,confirmation:str,invalidation:str,rationale:str});
 function capturedPanelList(items){
  if(!Array.isArray(items)||items.length>16)throw Error('Invalid captured panel list.');
@@ -58,20 +60,37 @@ function normalizePrevious(previous,date){
  if(previous.date!==date||typeof previous.checkedAt!=='string'||!Array.isArray(previous.sources)||previous.sources.length>16)throw Error('Invalid prior evidence');
  const result={date,checkedAt:previous.checkedAt,sources:previous.sources.map(s=>{
   let data=s.data??null;
-  if(s.id==='databento'&&data&&typeof data==='object'){const {recentBars,bars5m,bars15m,priceObservations,...snapshot}=data;data=snapshot;}
+  if(s.id==='databento'&&data&&typeof data==='object'){const {recentBars,bars5m,bars15m,priceObservations,priorContext,...snapshot}=data;data=snapshot;}
   return {id:String(s.id).slice(0,40),data};
  })};
  if(JSON.stringify(result).length>100000)throw Error('Invalid prior evidence');
  return result;
 }
-function nativeESData(source){const d=source?.data;return source?.id==='databento'&&d?.available===true&&d?.ticker==='ES'&&d?.dataset==='GLBX.MDP3'&&/^ES[HMUZ]\d{1,2}$/.test(d.contract)&&Array.isArray(d.recentBars)&&d.recentBars.length>0;}
-function nativeAPILevel(l,packet){const source=packet.sources.find(s=>l.sourceIds.includes(s.id)&&nativeESData(s));if(!source)return false;const d=source.data,prices=[d.latestPrice,...['high','low','open','close'].map(k=>d.session?.[k]),...['high','low','open','close'].map(k=>d.cashSession?.[k]),...[d.recentBars,d.bars5m,d.bars15m].filter(Array.isArray).flat().flatMap(b=>[b.open,b.high,b.low,b.close])];return prices.some(p=>Number.isFinite(p)&&Math.abs(p-l.price)<0.00001);}
+function nativeESData(source){const d=source?.data;return source?.id==='databento'&&d?.available===true&&d?.ticker==='ES'&&d?.dataset==='GLBX.MDP3'&&/^ES[HMUZ]\d{1,2}$/.test(d.contract)&&Array.isArray(d.recentBars)&&(d.recentBars.length>0||d.priorContext?.available===true);}
+function validAPIOrigin(l,packet){
+ const o=l.apiOrigin;if(!o||packet.instrument!=='ES')return false;
+ const source=packet.sources.find(s=>s.id===o.sourceId&&l.sourceIds.includes(s.id)&&nativeESData(s));
+ if(!source||!['open','high','low','close'].includes(o.field)||!Number.isFinite(Date.parse(o.timestamp)))return false;
+ const d=source.data,t=Date.parse(o.timestamp),boundary=Date.parse(esSessionBounds(packet.date).start);let rows=[];
+ if(o.sessionDate===packet.date){
+  const key={'1m':'recentBars','5m':'bars5m','15m':'bars15m','session':'session','cash_session':'cashSession'}[o.timeframe];
+  if(!key)return false;rows=Array.isArray(d[key])?d[key]:d[key]?[{...d[key],timestamp:d[key].from}]:[];
+ }else{
+  const c=d.priorContext;
+  if(o.timeframe!=='1h'||!c?.available||c.contract!==d.contract||c.dataset!=='GLBX.MDP3'||c.schema!=='ohlcv-1h'||o.sessionDate>=packet.date)return false;
+  rows=c.sessions?.find(s=>s.sessionDate===o.sessionDate)?.bars||[];
+  rows=rows.filter(b=>Date.parse(b.end)<=boundary&&Date.parse(b.end)-Date.parse(b.timestamp)===3600000);
+ }
+ return rows.some(b=>Date.parse(b.timestamp)===t&&Number.isFinite(b[o.field])&&Math.abs(b[o.field]-l.price)<0.00001);
+}
+function nativeAPILevel(l,packet){if(l.apiOrigin)return validAPIOrigin(l,packet);const source=packet.sources.find(s=>l.sourceIds.includes(s.id)&&nativeESData(s));if(!source)return false;const d=source.data,prices=[d.latestPrice,...['high','low','open','close'].map(k=>d.session?.[k]),...['high','low','open','close'].map(k=>d.cashSession?.[k]),...[d.recentBars,d.bars5m,d.bars15m].filter(Array.isArray).flat().flatMap(b=>[b.open,b.high,b.low,b.close])];return prices.some(p=>Number.isFinite(p)&&Math.abs(p-l.price)<0.00001);}
 export function validateAnalysis(value,packet){
  if(!value||typeof value.headline!=='string'||typeof value.summary!=='string'||!Array.isArray(value.levels)||value.levels.length>6||!Array.isArray(value.scenarios)||value.scenarios.length!==3||!Array.isArray(value.sources)||!['gaps','changes'].every(k=>Array.isArray(value[k])&&value[k].every(v=>typeof v==='string')))throw Error('Invalid analysis format.');
  const sources=new Set(packet.sources.map(s=>s.id)),ids=new Set();
  const checkpoints=value.checkpoints??[];
  if(!Array.isArray(checkpoints)||checkpoints.length>12)throw Error('Invalid path checkpoints.');
  const allLevels=[...value.levels,...checkpoints];
+ for(const l of allLevels)if(l.apiOrigin!==undefined&&l.apiOrigin!==null&&!validAPIOrigin(l,packet))throw Error('The cited ES price does not match its dated source bar.');
  const panels=value.panels||[];if(!Array.isArray(panels)||panels.length>12)throw Error('Invalid panels.');const panelIds=new Set();
  for(const p of panels){const source=packet.sources.find(s=>s.id===p.sourceId);if(!source?.image||typeof p.id!=='string'||panelIds.has(p.id)||!['title','instrument','observedDate','reason','shows'].every(k=>typeof p[k]==='string')||!['usable','context','excluded'].includes(p.status))throw Error('Invalid panel evidence.');panelIds.add(p.id);const r=p.region;if(!r||![r.x,r.y,r.width,r.height].every(Number.isFinite)||r.x<0||r.y<0||r.width<=0||r.height<=0||r.x+r.width>1.001||r.y+r.height>1.001)throw Error('Invalid panel bounds.');if(p.status==='usable'&&(p.observedDate!==packet.date||!(packet.instrument==='ES'&&packet.basis===null?['ES']:['SPX',packet.instrument]).includes(p.instrument)))throw Error('Panel instrument or date mismatch.');}
 
@@ -192,6 +211,10 @@ Assign every level a role: structure for a visible support/resistance/retest/ran
 Each scenario has continuation {targetId,condition,confirmation,invalidation,rationale}. For up/down, use an evidenced broader 5-minute/15-minute reaction or acceptance boundary beyond the first target when justified. Put both the first target and the broader objective in main levels so their staged route can be drawn. The continuation condition must explicitly require acceptance beyond the first target AND every intervening checkpoint; confirmation explains the behavior needed there, invalidation explains what cancels the continuation, and rationale explains why the full-session structure makes the farther objective relevant. Nearby checkpoints are decision points to reassess, not absolute walls or automatic exits. The route is not a prediction, expected move, trade entry or risk/reward estimate. Do not choose a farther target just to manufacture a large number or use the day's range as a promised move. If there is no evidenced farther objective, use targetId null and explain the missing structure; e.g. one session alone may not identify support below its own low. For neutral use continuation targetId null, and use two real range boundaries rather than the last quote. Keep a concise headline that captures the broader conditional thesis; distinguish the immediate reaction, conditional continuation and observed session range. No fixed five-point rule defines a worthwhile trade.
 
 Use America/New_York for all ES session descriptions and label every quoted time ET. Databento newYorkTime is the supplied local bar-start time; timestamp/end/observedThrough ending in Z are UTC, never local time. For example 16:45Z in September is 12:45 PM ET, not a late-afternoon 4:45 PM rebound, and 12:00Z is 8:00 AM ET before the cash open, not noon. Before naming a level or describing the day's sequence, reconcile its time with the 9:30 AM ET cash open and 4:00 PM ET cash close (early close if specified). The ordinary futures session continues to 5:00 PM ET. A noon reaction cannot be called the final late-session rebound. Identify an earlier reaction as an earlier-session objective and explain its later retests/failures. Cash-session descriptions must agree with the supplied cash-session extrema. Do not claim an exact structural reaction from one bar high alone; cite the surrounding reversal or repeated response.
+
+Review Databento priorContext before concluding there is no objective beyond this session's extremes. It contains up to five earlier traded sessions from ten calendar days, using the SAME named, unadjusted ES contract and hourly bars strictly before the selected session. These are dated price references, not fresh quotes or guaranteed support/resistance. Check what subsequent hourly bars and the selected session did at each candidate: a level traded through repeatedly is not untouched support or clear room. Prefer actual reversals, repeated responses and relevant failed/accepted areas over every prior high/low. A prior-session reaction can support a conditional map boundary when its continued relevance is explained. Give its source date and whether later price crossed/retested it. Do not assume prior sessions are complete, infer cash-session highs from hourly bars, call closes settlements, or join different contracts. If no defensible farther objective survives that review, retain the explicit gap. Never use any bar after the selected session's data cutoff.
+
+Every Databento-derived level/checkpoint must include apiOrigin {sourceId:'databento',sessionDate,timeframe,timestamp,field}. Copy the exact source bar-start timestamp and OHLC field holding that exact price. Earlier-session origins use timeframe '1h' and that earlier sessionDate. Current-session origins use '1m','5m','15m', or 'session'/'cash_session' with the summary's from timestamp. One-hour highs/lows occurred somewhere within that hour, not necessarily at its starting minute. For a quote marker, provider model or chart-only annotation with no matching Databento OHLC origin, apiOrigin is null. A valid bar citation proves the price existed, not that it is support/resistance: still explain the response pattern. Quote exact dates and ET intervals in derivation. Do not cite a similar price or a different timestamp just to fit the schema.
 
 Use native ES chart coordinates when instrument is ES and basis is null. A pasted ES chart can support native ES structure after hours without a basis. SPX APIs and panels remain useful explanatory context, but may be translated to ES ONLY with the explicitly supplied basis; show that conversion and its historical time limitation. Never subtract later ES from frozen SPX and call it synchronized. Never use SPY x10, QQQ conversions or related-instrument prices as ES levels. Do not convert a value twice. Two related exposure providers are not independent confirmation. Apply this separation to every driver, rationale, summary and source priceEffect, not only numeric map labels. Without a matched ES–SPX basis, SPX prices cannot be described as overhead, underneath, nearby, or at an ES boundary. Such drivers must be context with a concrete coordinate-separation explanation. SPY, QQQ and NQ feeds remain related-instrument context. A raw Greek sign or extremum alone is not directional confirmation, dealer inventory, or proof of hedging trades; API-only exposure drivers remain context. Matching observed price behavior must establish any supports/opposes claim.
 

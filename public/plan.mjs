@@ -7,7 +7,7 @@ export function quoteStatus(feed, now=Date.now()){
 }
 export function levelDetails(level,analysis={}){
  const panels=(analysis.panels||[]).filter(p=>level.panelIds?.includes(p.id));
- const source=panels.map(p=>p.title).join(' · ')||'API source';
+ const source=[...panels.map(p=>p.title),...(level.apiOrigin?['Databento · '+level.apiOrigin.sessionDate+' · '+level.apiOrigin.timeframe+' '+level.apiOrigin.field]:[])].join(' · ')||'API source';
  if(level.identity)return {...level.identity,source,badge:({provider:'Named source level',structure:'Price reaction',drawing:'Indicator not identified',quote:'Snapshot price'})[level.identity.category]};
  const category=level.role==='last_price'?'quote':level.role==='structure'?'structure':'drawing';
  return {category,name:category==='quote'?'Last observed price':category==='drawing'?'Chart line · indicator unknown':String(level.label||'Price reaction').replace(/^\d[\d,.]*\s+/,''),sourceLabel:null,source,

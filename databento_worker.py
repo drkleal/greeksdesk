@@ -70,6 +70,37 @@ def resolve_contract(client, symbol, date):
     return contract
 
 
+def read_prior_context(client, db, contract, session_start, available, spent=0):
+    """Same-contract hourly evidence strictly before the selected session."""
+    requested_start = session_start - timedelta(days=10)
+    context = dict(available=False, contract=contract, dataset=DATASET, schema='ohlcv-1h',
+                   requestedFrom=stamp(requested_start), requestedThrough=stamp(session_start),
+                   bars=[], estimatedCostUSD=0)
+    try:
+        schema_range = available.get('schema', {}).get('ohlcv-1h', available)
+        end = min(session_start.astimezone(UTC), parse_time(schema_range['end']))
+        end = end.replace(minute=0, second=0, microsecond=0)
+        if end <= requested_start:
+            context['message'] = 'Earlier ES hourly history is not available for this window.'
+            return context
+        params = dict(dataset=DATASET, symbols=[contract], stype_in='raw_symbol',
+                      schema='ohlcv-1h', start=requested_start, end=end, limit=256)
+        cost = client.metadata.get_cost(**params)
+        if not math.isfinite(cost) or cost < 0 or spent + cost > 0.05:
+            context['message'] = 'Earlier ES history skipped: combined estimated history cost exceeds $0.05.'
+            return context
+        rows = [bar(record, 3600) for record in client.timeseries.get_range(**params)
+                if isinstance(record, db.OHLCVMsg)]
+        if len(rows) >= 256:
+            raise ValueError('Prior history reached the row limit')
+        context.update(available=bool(rows), bars=rows, through=stamp(end), estimatedCostUSD=cost)
+        if not rows:
+            context['message'] = 'No earlier trades returned for this exact ES contract.'
+    except Exception as exc:
+        context['message'] = safe_error(exc)
+    return context
+
+
 def read(request):
     import databento as db
     date = datetime.strptime(request['date'], '%Y-%m-%d').date()
@@ -89,6 +120,7 @@ def read(request):
     result = {'ok': True, 'contract': raw_symbol, 'requestedSymbol': symbol,
               'dataset': DATASET, 'sessionDate': str(date), 'checkedAt': stamp(now),
               'bars': [], 'quote': None, 'messages': []}
+    available = None
     try:
         available = historical.metadata.get_dataset_range(dataset=DATASET)
         schema_range = available.get('schema', {}).get('ohlcv-1m', available)
@@ -111,9 +143,17 @@ def read(request):
     except Exception as exc:
         result['messages'].append(safe_error(exc))
 
+    if request.get('cached_context_contract') == raw_symbol:
+        result['contextReused'] = True
+    elif available:
+        result['priorContext'] = read_prior_context(historical, db, raw_symbol, start, available,
+                                                  result.get('estimatedHistoryCostUSD', 0))
+    else:
+        result['priorContext'] = {'available': False, 'message': 'Earlier ES history availability could not be checked.'}
+
     # Live capture is short-lived and invoked only by an explicit update cycle.
     # It replays one minute, then accepts a fresh completed one-second trade bar.
-    if date == now.astimezone(NY).date() and market_window(now):
+    if start <= now < end and market_window(now):
         live = db.Live(reconnect_policy='none')
         received = []
         def receive(record):

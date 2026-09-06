@@ -13,6 +13,14 @@ export function nyTime(value=new Date()) {
  return {date:`${p.year}-${p.month}-${p.day}`,seconds:Number(p.hour)*3600+Number(p.minute)*60+Number(p.second)};
 }
 export const today=()=>nyTime().date;
+const shiftDate=(date,days)=>new Date(Date.parse(date+'T12:00:00Z')+days*86400000).toISOString().slice(0,10);
+// Futures trade after 18:00 ET belongs to the following calendar session.
+export function esSessionDate(now=new Date()) {const p=nyTime(now);return p.seconds>=18*3600?shiftDate(p.date,1):p.date;}
+export function esSessionBounds(date){
+ if(!validDate(date))throw Error('Invalid ES session date');
+ const localInstant=(day,hour)=>{const wall=Date.parse(day+'T'+String(hour).padStart(2,'0')+':00:00Z'),p=nyTime(wall),localWall=Date.parse(p.date+'T00:00:00Z')+p.seconds*1000;return new Date(wall+(wall-localWall)).toISOString();};
+ return {start:localInstant(shiftDate(date,-1),18),end:localInstant(date,17)};
+}
 export function validDate(date){return typeof date==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(date)&&Number.isFinite(Date.parse(date))&&new Date(date).toISOString().slice(0,10)===date;}
 export function cashSession(date){
  if(!validDate(date)||date<'2026-01-01'||date>'2028-12-31')return null;
