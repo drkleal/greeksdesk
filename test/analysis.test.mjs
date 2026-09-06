@@ -28,3 +28,15 @@ test('data-only reference read has exact extrema and no AI request or trading tr
  const r=await analyze({date:'2026-09-04',instrument:'SPX',sources:[{id:'gamma',title:'Gamma',sessionDate:'2026-09-04',data:{actualSlot:'2026-09-04T16:00:00',rows:[{price:7743,value:-1743},{price:7740.5,value:-1871},{price:7715.5,value:1174}]}}]});
  assert.equal(calls,0);assert.equal(r.ok,true);assert.equal(r.analysis.levels.find(l=>l.label==='Negative Gamma reference').price,7740.5);assert.ok(r.analysis.scenarios.every(s=>s.status==='insufficient'&&s.triggerId===null));
 });
+
+const panel={id:'p1',sourceId:'gamma',title:'Price',instrument:'SPX',observedDate:'2026-09-04',status:'usable',reason:'Readable',shows:'Price structure',region:{x:0,y:0,width:1,height:1}};
+test('panel evidence excludes mismatched dates and cross-instrument prices',()=>{
+ assert.throws(()=>validateAnalysis({...valid,panels:[{...panel,observedDate:'2026-09-08'}]},packet));
+ assert.throws(()=>validateAnalysis({...valid,panels:[{...panel,instrument:'SPY'}]},packet));
+ assert.throws(()=>validateAnalysis({...valid,panels:[{...panel,region:{x:.9,y:0,width:.5,height:1}}]},packet));
+ assert.equal(validateAnalysis({...valid,panels:[panel]},packet).panels.length,1);
+});
+test('ES API references apply only the explicitly supplied basis',()=>{
+ const input=validatePacket({date:'2026-09-04',instrument:'ES',basis:17.25,sources:[{id:'price',title:'SPX',sessionDate:'2026-09-04',data:{ticker:'SPX',latestPrice:7700}}]});
+ return createAnalyzer({env:{}})(input).then(r=>assert.equal(r.analysis.levels[0].price,7717.25));
+});
