@@ -1,4 +1,4 @@
-import {node,labelPositions} from './map.mjs';
+import {node} from './map.mjs';
 import {conversionFor,exposureColumns,compact,signed,levelConfluence,confluenceLabel} from './confluence.mjs';
 import {priceText,levelDetails,scenarioRoute} from './plan.mjs';
 const ns='http://www.w3.org/2000/svg';
@@ -8,26 +8,48 @@ export function renderLevelBoard(host,read,{inspectLevel,inspectSource,inspectSc
  const a=read.result.analysis,conversion=conversionFor(read),columns=exposureColumns(read),feed=read.sources.find(s=>s.id==='databento')?.data;
  const title=node('div',undefined,'wb-board-heading');title.append(node('h3','Conditional paths & confluence · '+read.instrument),node('p','Aligned exposure bars, price structure and conditions. Larger bars show larger values within each source’s scale.','muted'));
  const controls=node('div',undefined,'controls'),range=node('select');range.setAttribute('aria-label','Confluence chart range');for(const [value,label]of [[80,'±80 points'],[40,'±40 points'],[150,'±150 points']]){const o=node('option',label);o.value=value;range.append(o);}controls.append(node('span',conversion.label,'wb-basis'),range);title.append(controls);host.append(title);
- const tooltip=node('div',undefined,'wb-board-tooltip');tooltip.hidden=true;tooltip.id='confluence-hover';tooltip.setAttribute('role','tooltip');host.append(tooltip);
+ const tooltip=node('div',undefined,'wb-board-tooltip');tooltip.hidden=true;tooltip.id='confluence-hover';tooltip.setAttribute('role','tooltip');tooltip.setAttribute('popover','manual');host.append(tooltip);
+ let dismissEvents,detachObserver,leaveTimer,currentTarget;
+ const hideTip=()=>{clearTimeout(leaveTimer);dismissEvents?.abort();detachObserver?.disconnect();if(tooltip.matches(':popover-open'))tooltip.hidePopover();tooltip.hidden=true;currentTarget=null;};
+ const leaveTip=()=>{clearTimeout(leaveTimer);leaveTimer=setTimeout(hideTip,120);};
+ tooltip.addEventListener('mouseenter',()=>clearTimeout(leaveTimer));tooltip.addEventListener('mouseleave',leaveTip);
  function tip(target,heading,lines,action){
-  target.append(svg('title',{},heading+' · '+lines.join(' · ')));target.setAttribute('aria-label',heading);target.setAttribute('aria-describedby',tooltip.id);
-  const hide=()=>{tooltip.hidden=true;};
-  const show=()=>{tooltip.replaceChildren(node('strong',heading),...lines.map(l=>node('p',l)),node('small','Click to open the complete evidence'));tooltip.hidden=false;const b=target.getBoundingClientRect();tooltip.style.left=Math.max(10,Math.min(innerWidth-390,b.x+20))+'px';tooltip.style.top=Math.max(10,Math.min(innerHeight-250,b.y+25))+'px';};
-  target.addEventListener('mouseenter',show);target.addEventListener('focus',show);target.addEventListener('mouseleave',hide);target.addEventListener('blur',hide);active(target,()=>{hide();action();});
+  // ARIA supplies the accessible name; an SVG title would create a second,
+  // browser-owned tooltip on top of this explanation.
+  target.setAttribute('aria-label',heading);target.setAttribute('aria-describedby',tooltip.id);
+  const show=()=>{
+   hideTip();currentTarget=target;
+   tooltip.replaceChildren(node('strong',heading),...lines.map(l=>node('p',l)),node('small','Click the marker for complete evidence · Esc to dismiss'));
+   tooltip.hidden=false;tooltip.showPopover?.();
+   // Anchor to the label/card, not the price line spanning the entire SVG.
+   const anchor=target.querySelector('rect[rx],text')||target,b=anchor.getBoundingClientRect(),t=tooltip.getBoundingClientRect(),pad=12,gap=16,vw=document.documentElement.clientWidth,vh=innerHeight;
+   const left=b.left-gap-t.width,right=b.right+gap,preferLeft=(b.left+b.right)/2>vw/2;
+   let x=preferLeft?left:right,y=b.top+(b.height-t.height)/2;
+   if(x<pad||x+t.width>vw-pad)x=preferLeft?right:left;
+   if(x<pad||x+t.width>vw-pad){x=(b.left+b.right-t.width)/2;y=b.bottom+gap;if(y+t.height>vh-pad)y=b.top-gap-t.height;}
+   tooltip.style.left=Math.max(pad,Math.min(vw-t.width-pad,x))+'px';tooltip.style.top=Math.max(pad,Math.min(vh-t.height-pad,y))+'px';
+   dismissEvents=new AbortController();const options={signal:dismissEvents.signal};
+   window.addEventListener('scroll',event=>{if(!tooltip.contains(event.target))hideTip();},{...options,capture:true});
+   window.addEventListener('resize',hideTip,options);window.addEventListener('keydown',event=>{if(event.key==='Escape')hideTip();},options);
+   // A refreshed read can remove the board while the pointer is still over it.
+   detachObserver=new MutationObserver(()=>{if(!target.isConnected)hideTip();});detachObserver.observe(host.parentNode,{childList:true,subtree:true});
+  };
+  target.addEventListener('mouseenter',show);target.addEventListener('focus',()=>requestAnimationFrame(()=>{if(document.activeElement===target)show();}));target.addEventListener('mouseleave',()=>{if(currentTarget===target)leaveTip();});target.addEventListener('blur',()=>{if(currentTarget===target)hideTip();});active(target,()=>{hideTip();action();});
  }
  const plot=node('div',undefined,'wb-board-scroll');host.append(plot);
- const groups=[{label:'GAMMA',ids:['qd-gamma','qd-gamma-0dte','od-gex-mm-strike'],x:130,w:270},{label:'DEX',ids:['qd-delta','od-dex-mm-strike'],x:420,w:215},{label:'VANNA',ids:['qd-vanna','od-vex-mm-strike'],x:655,w:215},{label:'OPEN INTEREST',ids:['qd-oi-strike'],x:890,w:170}];
+ const groups=[{label:'GAMMA',ids:['qd-gamma','qd-gamma-0dte','od-gex-mm-strike'],x:120,w:220},{label:'DEX',ids:['qd-delta','od-dex-mm-strike'],x:360,w:160},{label:'VANNA',ids:['qd-vanna','od-vex-mm-strike'],x:540,w:160},{label:'OPEN INTEREST',ids:['qd-oi-strike'],x:720,w:150}];
  function draw(){
-  plot.replaceChildren();tooltip.hidden=true;const canMap=conversion.kind!=='unmapped',basis=conversion.basis||0;
+  hideTip();plot.replaceChildren();const canMap=conversion.kind!=='unmapped',basis=conversion.basis||0;
   const last=read.instrument==='ES'?feed?.latestPrice:read.sources.find(s=>s.id==='quantdata')?.data?.latestPrice;
   const spot=Number.isFinite(last)?last:(a.levels[0]?.price||0),span=Number(range.value),min=Math.floor((spot-span)/5)*5,max=Math.ceil((spot+span)/5)*5;
+  const levels=a.levels.filter(l=>l.role==='structure'&&l.price>=min&&l.price<=max).sort((a,b)=>b.price-a.price);
   if(!spot){plot.append(node('p','Verified price levels will appear here after the first analysis.','muted'));return;}
   const H=Math.max(850,(max-min)/5*25+125),W=1660,top=65,bottom=H-45,y=p=>top+(max-p)/(max-min)*(bottom-top);
   const root=svg('svg',{viewBox:`0 0 ${W} ${H}`,class:'wb-level-board','aria-label':'Full width price and exposure confluence chart'}),defs=svg('defs');
   for(const [d,c]of [['up','#40ffc1'],['down','#ff5e90'],['neutral','#ffe16a']]){const m=svg('marker',{id:'board-arrow-'+d,markerWidth:8,markerHeight:8,refX:6,refY:3,orient:'auto'});m.append(svg('path',{d:'M0,0 L0,6 L7,3 z',fill:c}));defs.append(m);}root.append(defs);
-  root.append(svg('text',{x:14,y:23,fill:'#cce6ff','font-size':14},read.instrument+' LEVEL'),svg('text',{x:1080,y:23,fill:'#cce6ff','font-size':14},'SESSION / PROFILE / DEPTH'),svg('text',{x:1350,y:23,fill:'#cce6ff','font-size':14},'KEY LEVELS & CONFLUENCE'));
+  root.append(svg('text',{x:14,y:23,fill:'#cce6ff','font-size':14},read.instrument+' LEVEL'),svg('text',{x:890,y:23,fill:'#cce6ff','font-size':14},'SESSION / PROFILE / DEPTH'),svg('text',{x:1350,y:23,fill:'#cce6ff','font-size':14},'KEY LEVELS & CONFLUENCE'));
   if(!canMap)root.append(svg('text',{x:130,y:43,fill:'#ffe16a','font-size':13},'SPX columns require a matching basis. Native ES structure remains visible.'));
-  for(let p=min;p<=max;p+=5){const yy=y(p);root.append(svg('line',{x1:10,x2:1645,y1:yy,y2:yy,stroke:'#17395b'}),svg('text',{x:100,y:yy+4,'text-anchor':'end',fill:'#e5f5ff','font-size':14,'font-weight':700},priceText(p)));if(canMap&&read.instrument==='ES')root.append(svg('text',{x:100,y:yy+15,'text-anchor':'end',fill:'#89a8ce','font-size':10},'SPX '+priceText(p-basis)));}
+  for(let p=min;p<=max;p+=5){const yy=y(p);root.append(svg('line',{x1:10,x2:1645,y1:yy,y2:yy,stroke:'#17395b'}));if(levels.some(l=>Math.abs(l.price-p)<3))continue;root.append(svg('text',{x:100,y:yy+4,'text-anchor':'end',fill:'#e5f5ff','font-size':14,'font-weight':700},priceText(p)));if(canMap&&read.instrument==='ES')root.append(svg('text',{x:100,y:yy+15,'text-anchor':'end',fill:'#89a8ce','font-size':10},'SPX '+priceText(p-basis)));}
   for(const group of groups){
    root.append(svg('text',{x:group.x,y:23,fill:'#8fbbf4','font-size':14},group.label));
    const selected=group.ids.map(id=>columns.find(c=>c.id===id)).filter(Boolean),baseX=group.x+group.w/2;
@@ -44,7 +66,7 @@ export function renderLevelBoard(host,read,{inspectLevel,inspectSource,inspectSc
      tip(g,col.title+' · '+priceText(r.price)+' SPX',[col.unit+' · '+col.scope,oi?'Calls '+compact(r.call)+' · Puts '+compact(r.put):'Net '+signed(r.net),col.source?.data?.limitation||'Provider observation'],()=>inspectSource(col.source,{title:col.title+' · SPX '+priceText(r.price),facts:[col.unit+' · '+col.scope,oi?'Calls '+compact(r.call)+' · Puts '+compact(r.put):'Net '+signed(r.net)]}));root.append(g);
     }
    });
-   root.append(svg('text',{x:group.x,y:H-12,fill:'#8eabd0','font-size':10},group.label==='OPEN INTEREST'?'Blue calls / purple puts · contracts':'QD signed bars · OD white bar, own scale'));
+   root.append(svg('text',{x:group.x,y:H-12,fill:'#8eabd0','font-size':9},group.label==='OPEN INTEREST'?'Blue calls / purple puts · contracts':group.label==='GAMMA'?'QD all / 0DTE · OD white':'QD signed bars · OD white'));
   }
   const references=[];
   for(const [name,data]of [['Futures session',feed?.session],...(!feed?.sessionProfiles?.RTH?[['RTH',feed?.cashSession]]:[]),...Object.entries(feed?.sessionProfiles||{})]){
@@ -54,21 +76,35 @@ export function renderLevelBoard(host,read,{inspectLevel,inspectSource,inspectSc
   for(const l of [...a.levels,...(a.checkpoints||[])])if(/poc|hvn|lvn|vwap|profile|value area/i.test(l.identity?.name||l.label))references.push({price:l.price,name:l.apiOrigin?.timeframe==='volume_profile'?l.apiOrigin.field.toUpperCase():l.identity?.name||l.label,level:l,detail:l.evidence});
   const profile=feed?.volumeProfile;if(profile?.available)for(const r of profile.nodes||[]){const reference={price:r.price,name:r.kind,source:read.sources.find(s=>s.id==='databento'),detail:feed.contract+' · '+compact(r.volume)+' contracts in this one-point bucket · '+(r.reason||profile.method)+' Window '+profile.from+' → '+profile.through},existing=references.find(item=>item.name===r.kind&&item.price===r.price);if(existing)Object.assign(existing,reference);else references.push(reference);}
   const visibleReferences=[...new Map(references.filter(r=>r.price>=min&&r.price<=max).map(r=>[r.name+':'+r.price,r])).values()].sort((a,b)=>b.price-a.price);
-  const referenceYs=labelPositions(visibleReferences.map(r=>y(r.price)),top+8,bottom-8,15);
-  for(const [index,r]of visibleReferences.entries()){const yy=y(r.price),ly=referenceYs[index],g=svg('g');g.append(svg('line',{x1:10,x2:1320,y1:yy,y2:yy,stroke:'#afc7e8','stroke-dasharray':/VWAP/.test(r.name)?'7 4':'2 4',opacity:.35}),svg('circle',{cx:1075,cy:yy,r:3,fill:/POC/i.test(r.name)?'#ff68d3':'#d5e8ff'}),svg('path',{d:`M1078,${yy} L1090,${ly}`,stroke:'#718eaf',fill:'none'}),svg('text',{x:1095,y:ly+4,fill:/POC/i.test(r.name)?'#ff80df':'#d5e8ff','font-size':10},r.name+' '+priceText(r.price)));tip(g,r.name+' · '+priceText(r.price),[r.detail],()=>r.level?inspectLevel(r.level):inspectSource(r.source,{title:r.name+' · '+priceText(r.price),facts:[r.detail]}));root.append(g);}
+  const samePrices=new Map();for(const r of visibleReferences){const key=r.price+':'+(r.source?.id||r.level?.sourceIds?.join(',')||'');if(!samePrices.has(key))samePrices.set(key,[]);samePrices.get(key).push(r);}
+  const placedReferences=[],referenceLayer=svg('g',{'data-price-references':'true'}),measure=document.createElement('canvas').getContext('2d');measure.font='10px Arial';
+  for(const rows of samePrices.values()){
+   const r=rows[0],yy=y(r.price),g=svg('g'),names=rows.map(r=>r.name),compactName=name=>name.replace('Futures session','Session').replace('Overnight','ON');
+   const suffix=names.every(n=>n.endsWith(' high'))?'high':names.every(n=>n.endsWith(' low'))?'low':null;
+   const name=rows.length>1&&suffix?names.map(n=>compactName(n).slice(0,-suffix.length-1)).join('/')+' '+suffix:names.map(compactName).join(' / ');
+   // Keep every reference on its exact price coordinate. Neighbors use another
+   // horizontal lane; identical prices share a label instead of moving in price.
+   const text=name+' '+priceText(r.price),width=measure.measureText(text).width+14;
+   let x=890;for(const prior of placedReferences.filter(p=>Math.abs(p.y-yy)<12).sort((a,b)=>a.x-b.x)){if(x+width<=prior.x)break;if(x<prior.x+prior.width)x=prior.x+prior.width+8;}
+   placedReferences.push({x,y:yy,width});
+   const color=names.some(n=>/POC/i.test(n))?'#ff80df':'#d5e8ff',heading=names.join(' / ')+' · '+priceText(r.price),facts=rows.map(item=>item.name+': '+item.detail);
+   g.append(svg('line',{x1:10,x2:1320,y1:yy,y2:yy,stroke:'#afc7e8','stroke-dasharray':names.some(n=>/VWAP/.test(n))?'7 4':'2 4',opacity:.35}),svg('circle',{cx:x,cy:yy,r:2.5,fill:color}),svg('text',{x:x+6,y:yy,'dominant-baseline':'central',fill:color,'font-size':10,stroke:'#061937','stroke-width':3,'paint-order':'stroke'},name+' '+priceText(r.price)));
+   tip(g,heading,facts,()=>rows.length===1&&r.level?inspectLevel(r.level):r.source?inspectSource(r.source,{title:heading,facts}):inspectLevel(r.level));referenceLayer.append(g);
+  }
   const depth=read.sources.find(s=>s.id==='od-depth-gex');if(canMap&&depth?.data.available)for(const d of (depth.data.byStrike||[]).filter(r=>r.strike+basis>=min&&r.strike+basis<=max).sort((a,b)=>Math.abs(b.net)-Math.abs(a.net)).slice(0,12)){const g=svg('g');g.append(svg('rect',{x:1302,y:y(d.strike+basis)-5,width:10,height:10,fill:'#a7c9ef'}));const cells=(depth.data.rows||[]).filter(r=>r.strike===d.strike);tip(g,'Depth View · '+priceText(d.strike+basis)+' '+read.instrument,['SPX '+d.strike+' · net '+signed(d.net)+' OD units',...cells.slice(0,4).map(r=>r.expirationDate+': '+signed(r.net))],()=>inspectSource(depth,{title:'Depth View · '+priceText(d.strike+basis)+' '+read.instrument,facts:['SPX '+d.strike+' · net '+signed(d.net)+' OD units',...cells.slice(0,6).map(r=>r.expirationDate+': '+signed(r.net))]}));root.append(g);}
-  const levels=a.levels.filter(l=>l.price>=min&&l.price<=max).sort((a,b)=>b.price-a.price);
-  const labelYs=labelPositions(levels.map(l=>y(l.price)),top+24,bottom-24,66);
-  for(const [index,l]of levels.entries()){
-   const yy=y(l.price),ly=labelYs[index],g=svg('g',{'data-level-id':l.id}),d=levelDetails(l,a),items=levelConfluence(read,l),label=confluenceLabel(items),decision=l.role==='structure';
+  const priceLabels=svg('g',{'data-trade-price-labels':'true'});
+  for(const l of levels){
+   const yy=y(l.price),g=svg('g',{'data-level-id':l.id}),d=levelDetails(l,a),items=levelConfluence(read,l),label=confluenceLabel(items),decision=l.role==='structure';
    const color=l.kind==='support'?'#40ffc1':l.kind==='resistance'?'#ff5e90':'#ffe16a';
+   const priceLabel=svg('g');priceLabel.append(svg('rect',{x:8,y:yy-11,width:100,height:22,rx:3,fill:'#061937'}),svg('text',{x:100,y:yy,'text-anchor':'end','dominant-baseline':'central',fill:color,'font-size':14,'font-weight':750},priceText(l.price)));
+   if(label.stars)priceLabel.append(svg('text',{x:10,y:yy,'dominant-baseline':'central',fill:'#ffd34f','font-size':14,class:'wb-confluence-stars'},label.stars));
+   tip(priceLabel,d.name+' · '+priceText(l.price),[label.text||d.derivation],()=>inspectLevel(l));priceLabels.append(priceLabel);
    g.append(svg('line',{x1:10,x2:1330,y1:yy,y2:yy,stroke:color,'stroke-width':decision?4:1.5,opacity:decision?1:.6}));
-   if(Math.abs(ly-yy)>1)g.append(svg('path',{d:`M1330,${yy} L1344,${yy} L1350,${ly}`,stroke:color,'stroke-width':1,fill:'none'}));
-   g.append(svg('rect',{x:1350,y:ly-26,width:294,height:54,rx:5,fill:'#0a2548',stroke:color,'stroke-opacity':.6}));
-   const heading=svg('text',{x:1360,y:ly-9,fill:color,'font-size':15,'font-weight':750},priceText(l.price));
+   g.append(svg('line',{x1:1330,x2:1350,y1:yy,y2:yy,stroke:color,'stroke-width':2}),svg('rect',{x:1350,y:yy-13,width:294,height:38,rx:5,fill:'#0a2548',stroke:color,'stroke-opacity':.6}));
+   const heading=svg('text',{x:1360,y:yy,'dominant-baseline':'central',fill:color,'font-size':14,'font-weight':750},priceText(l.price));
    if(label.stars)heading.append(svg('tspan',{fill:'#ffd34f',dx:9,class:'wb-confluence-stars'},label.stars));
-   g.append(heading,svg('text',{x:1360,y:ly+7,fill:'#eff8ff','font-size':12,'font-weight':650},d.name.length>38?d.name.slice(0,37)+'…':d.name));
-   if(label.text)g.append(svg('text',{x:1360,y:ly+21,fill:'#aee9df','font-size':10},label.text.length>48?label.text.slice(0,47)+'…':label.text));
+   g.append(heading,svg('text',{x:label.stars?1472:1435,y:yy,'dominant-baseline':'central',fill:'#eff8ff','font-size':11,'font-weight':650},d.name.length>31?d.name.slice(0,30)+'…':d.name));
+   if(label.text)g.append(svg('text',{x:1360,y:yy+17,fill:'#aee9df','font-size':10},label.text.length>48?label.text.slice(0,47)+'…':label.text));
    tip(g,d.name+' · '+priceText(l.price),[...(label.text?[label.text]:[]),d.derivation,...items.filter(i=>i.effect==='supports'&&!i.coordinateOnly).slice(0,3).map(i=>i.observation)],()=>inspectLevel(l));root.append(g);
   }
   for(const s of a.scenarios||[]){
@@ -82,7 +118,7 @@ export function renderLevelBoard(host,read,{inspectLevel,inspectSource,inspectSc
    }
   }
   if(Number.isFinite(last))root.append(svg('line',{x1:10,x2:1645,y1:y(last),y2:y(last),stroke:'#2ce2ff','stroke-width':2,'stroke-dasharray':'5 4'}),svg('rect',{x:112,y:y(last)-21,width:176,height:19,rx:3,fill:'#082442'}),svg('text',{x:120,y:y(last)-7,fill:'#42e8ff','font-size':14,'font-weight':700},'Observed '+priceText(last)));
-  plot.append(root);
+  root.append(referenceLayer,priceLabels);plot.append(root);
  }
  range.onchange=draw;draw();
  const legend=node('p',undefined,'wb-board-legend');legend.append(node('span','★ 3 supporting families     ★★ 4 or more','wb-confluence-stars'),node('span',' · Repeated views count once. Hover for the contribution; click for complete evidence.'));host.append(legend);
