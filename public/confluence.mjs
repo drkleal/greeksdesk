@@ -82,7 +82,7 @@ export function sanitizeConfluence(analysis,packet){
   if(restriction){e.effect=restriction.effect;e.scopeNote=restriction.reason;}
  }
 }
-export function levelConfluence(read,level){
+export function levelConfluence(read,level,{expirationDate=read.date}={}){
  const a=read.result.analysis,items=[];
  for(const e of a.confluence||[])if(e.levelId===level.id){
   const source=read.sources.find(s=>s.id===e.sourceId),panel=a.panels?.find(p=>p.id===e.panelId&&p.sourceId===e.sourceId);
@@ -96,7 +96,7 @@ export function levelConfluence(read,level){
  }
  // Coordinate overlap is useful for investigation, not a vote for direction.
  const conversion=conversionFor(read);
- if(conversion.kind!=='unmapped')for(const column of exposureColumns(read)){
+ if(conversion.kind!=='unmapped')for(const column of exposureColumns(read,{expirationDate})){
   if(!column.source||column.source.sessionDate!==read.date)continue;
   const nearby=column.rows.filter(r=>Math.abs(r.price+conversion.basis-level.price)<=1).sort((x,y)=>Math.abs(x.price+conversion.basis-level.price)-Math.abs(y.price+conversion.basis-level.price))[0];
   if(!nearby)continue;

@@ -1,5 +1,5 @@
 import {node} from './map.mjs';
-import {esPremiumRange,openingQuartile} from './straddle.mjs';
+import {esPremiumRange,openingQuartile,vixDailyRange} from './straddle.mjs';
 const storageKey='greeksdesk-opening-straddles-v1';
 const price=v=>Number.isFinite(v)?v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
 const time=t=>t?new Date(t).toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+' ET':'Time unavailable';
@@ -29,13 +29,14 @@ export function mountStraddlePanel(host,read,onChange){
    select.value==='opening'?(q.ready?'Opening ratio Q'+q.quartile+' against the preceding 60 sessions. Current session excluded.':'Opening history '+q.count+'/60 valid prior sessions. Quartile withheld until complete.'):'Opening ratio and quartile use a separate fixed 9:36 reference.',
    observation.limitation,...(refreshed?['This measurement was refreshed after the plan. The playbook remains at its displayed analysis time.']:[])
   ]:[observation?.message||data.message||'Update data to read both ATM option legs and VIX.'];
-  return {source,observation,mapping,opening: data.opening,openingMapping:opening,label,facts,multiples:multiples.checked,quartile:q};
+  return {source,observation,mapping,vixRange:vixDailyRange(observation,mapping),opening: data.opening,openingMapping:opening,label,facts,multiples:multiples.checked,quartile:q};
  }
  function render(){
   const v=view();stats.replaceChildren(node('strong',v.observation?.ready?v.label+' · ±'+price(v.observation.premium)+' pts':v.label+' · unavailable'));
   if(v.observation?.ready){
    stats.append(node('span',v.mapping.ready?price(v.mapping.lower)+' – '+price(v.mapping.upper)+' '+read.instrument:v.mapping.message||'No matching price anchor'));
    stats.append(node('span','VIX '+price(v.observation.vix)+' · ratio '+(Number.isFinite(v.observation.ratio)?v.observation.ratio.toFixed(3)+'×':'unavailable')));
+   if(v.vixRange.ready)stats.append(node('span','VIX daily benchmark ±'+price(v.vixRange.points)+' pts'));
   }else stats.append(node('span',v.facts[0]));
   stats.append(node('span',v.quartile.ready?'9:36 ratio · Q'+v.quartile.quartile+' / 60 prior sessions':'9:36 comparison · '+v.quartile.count+'/60 · quartile pending'));
   build.hidden=v.quartile.count===60;build.disabled=loading;

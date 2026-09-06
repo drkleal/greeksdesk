@@ -2,12 +2,14 @@ import {node} from './map.mjs';
 import {conversionFor,exposureColumns,compact,signed,levelConfluence,confluenceLabel} from './confluence.mjs';
 import {priceText,levelDetails,scenarioRoute} from './plan.mjs';
 import {mountStraddlePanel} from './straddle-panel.mjs';
+import {levelBrief,wrapBrief} from './level-brief.mjs';
+import {barValues,seriesScale,gammaConcentrations} from './exposure-display.mjs';
 const ns='http://www.w3.org/2000/svg';
 const svg=(tag,attrs={},text)=>{const e=document.createElementNS(ns,tag);for(const [k,v]of Object.entries(attrs))e.setAttribute(k,v);if(text!==undefined)e.textContent=text;return e;};
 function active(e,click){e.setAttribute('tabindex','0');e.setAttribute('role','button');e.addEventListener('click',click);e.addEventListener('keydown',event=>{if(['Enter',' '].includes(event.key)){event.preventDefault();click();}});}
 export function renderLevelBoard(host,read,{inspectLevel,inspectSource,inspectScenario}){
  const a=read.result.analysis,conversion=conversionFor(read),feed=read.sources.find(s=>s.id==='databento')?.data;
- const title=node('div',undefined,'wb-board-heading');title.append(node('h3','Conditional paths & confluence · '+read.instrument),node('p','Aligned exposure bars, price structure and conditions. Larger bars show larger values within each source’s scale.','muted'));
+ const title=node('div',undefined,'wb-board-heading');title.append(node('h3','Conditional paths & confluence · '+read.instrument),node('p','Each exposure series uses its own visible-range scale. Bright bars: selected expiration; dim bars: all expirations. Compare magnitude within a series.','muted'));
  const controls=node('div',undefined,'controls'),range=node('select');range.setAttribute('aria-label','Confluence chart range');for(const [value,label]of [[80,'±80 points'],[40,'±40 points'],[150,'±150 points']]){const o=node('option',label);o.value=value;range.append(o);}
  const expiry=node('select');expiry.setAttribute('aria-label','Highlighted Gamma expiration');const dates=read.sources.find(s=>s.id==='qd-gamma')?.data?.expirationDates||[read.date];for(const d of dates){const o=node('option','Gamma exp '+d+(d===read.date?' · session':' · forward'));o.value=d;expiry.append(o);}expiry.value=dates.includes(read.overlayExpiration)?read.overlayExpiration:read.date;
  controls.append(node('span',conversion.label,'wb-basis'),range,expiry);title.append(controls);host.append(title);
@@ -25,7 +27,7 @@ export function renderLevelBoard(host,read,{inspectLevel,inspectSource,inspectSc
    tooltip.replaceChildren(node('strong',heading),...lines.map(l=>node('p',l)),node('small','Click the marker for complete evidence · Esc to dismiss'));
    tooltip.hidden=false;tooltip.showPopover?.();
    // Anchor to the label/card, not the price line spanning the entire SVG.
-   const anchor=target.querySelector('rect[rx],text')||target,b=anchor.getBoundingClientRect(),t=tooltip.getBoundingClientRect(),pad=12,gap=16,vw=document.documentElement.clientWidth,vh=innerHeight;
+   const anchor=target.querySelector('[data-level-card],rect[rx],text')||target,b=anchor.getBoundingClientRect(),t=tooltip.getBoundingClientRect(),pad=12,gap=16,vw=document.documentElement.clientWidth,vh=innerHeight;
    const left=b.left-gap-t.width,right=b.right+gap,preferLeft=(b.left+b.right)/2>vw/2;
    let x=preferLeft?left:right,y=b.top+(b.height-t.height)/2;
    if(x<pad||x+t.width>vw-pad)x=preferLeft?right:left;
@@ -52,12 +54,22 @@ export function renderLevelBoard(host,read,{inspectLevel,inspectSource,inspectSc
   const spot=Number.isFinite(last)?last:(a.levels[0]?.price||0),span=visibleSpan,min=Math.floor((spot-span)/5)*5,max=Math.ceil((spot+span)/5)*5;
   const levels=a.levels.filter(l=>l.role==='structure'&&l.price>=min&&l.price<=max).sort((a,b)=>b.price-a.price);
   if(!spot){plot.append(node('p','Verified price levels will appear here after the first analysis.','muted'));return;}
-  const H=Math.max(850,(max-min)/5*25+125),W=1660,top=65,bottom=H-45,y=p=>top+(max-p)/(max-min)*(bottom-top);
-  const root=svg('svg',{viewBox:`-110 0 ${W+110} ${H}`,class:'wb-level-board','aria-label':'Full width price and exposure confluence chart'}),defs=svg('defs');
+  const briefs=new Map(levels.map(l=>{const b=levelBrief(read,l,{expirationDate:expiry.value}),lines=wrapBrief(b.condition);return [l.id,{...b,lines,height:70+lines.length*15+(b.confluence.text?16:0)+wrapBrief(b.modelText,90).length*15}];}));
+  // Increase price scale density to keep the full condition on its own level.
+  // Text is never displaced to another price or silently shortened.
+  const density=Math.min(24,Math.max(6,...levels.slice(0,-1).map((l,i)=>(briefs.get(l.id).height+8)/Math.max(1,l.price-levels[i+1].price))));
+  const H=Math.max(950,(max-min)*density+180),W=1920,top=65,bottom=H-110,y=p=>top+(max-p)/(max-min)*(bottom-top);
+  const root=svg('svg',{viewBox:`-160 0 ${W+160} ${H}`,class:'wb-level-board','aria-label':'Full width price and exposure confluence chart'}),defs=svg('defs');
   for(const [d,c]of [['up','#40ffc1'],['down','#ff5e90'],['neutral','#ffe16a']]){const m=svg('marker',{id:'board-arrow-'+d,markerWidth:8,markerHeight:8,refX:6,refY:3,orient:'auto'});m.append(svg('path',{d:'M0,0 L0,6 L7,3 z',fill:c}));defs.append(m);}root.append(defs);
-  root.append(svg('text',{x:14,y:23,fill:'#cce6ff','font-size':14},read.instrument+' LEVEL'),svg('text',{x:890,y:23,fill:'#cce6ff','font-size':14},'SESSION / PROFILE / DEPTH'),svg('text',{x:1350,y:23,fill:'#cce6ff','font-size':14},'KEY LEVELS & CONFLUENCE'));
+  root.append(svg('text',{x:14,y:23,fill:'#cce6ff','font-size':14},read.instrument+' LEVEL'),svg('text',{x:890,y:23,fill:'#cce6ff','font-size':14},'SESSION / PROFILE / DEPTH'),svg('text',{x:1350,y:23,fill:'#cce6ff','font-size':14},'LEVEL / CONDITIONAL PLAN / CONFLUENCE'));
   const premium=straddle.view(),clip=p=>Math.max(top,Math.min(bottom,y(p)));
-  root.append(svg('text',{x:-104,y:23,fill:'#40ffc1','font-size':11,'font-weight':700},'STRADDLE'));
+  root.append(svg('text',{x:-92,y:23,fill:'#40ffc1','font-size':10,'font-weight':700},'STRADDLE'),svg('text',{x:-150,y:23,fill:'#8abaff','font-size':10,'font-weight':700},'VIX 1D'));
+  if(premium.vixRange.ready){
+   const v=premium.vixRange,g=svg('g',{'data-vix-bar':'true'}),c='#8abaff';
+   g.append(svg('rect',{x:-136,y:clip(v.upper),width:13,height:Math.max(2,clip(v.lower)-clip(v.upper)),rx:3,fill:c,opacity:.38,stroke:c,'stroke-width':2}));
+   for(const [p,sign]of [[v.upper,'+'],[v.lower,'−']])g.append(svg('line',{x1:-144,x2:-115,y1:clip(p),y2:clip(p),stroke:c,'stroke-width':2}),svg('text',{x:-129,y:clip(p)+(sign==='+'?-8:16),'text-anchor':'middle',fill:c,'font-size':10},(p>max?'↑ ':p<min?'↓ ':'')+sign+priceText(v.points)));
+   tip(g,'VIX daily benchmark · ±'+priceText(v.points)+' points',[v.method,'VIX '+priceText(premium.observation.vix)+' · SPX '+priceText(premium.observation.spot)+' · '+v.timestamp,'ES bounds '+priceText(v.lower)+' – '+priceText(v.upper)+' · same-time anchor '+priceText(v.anchor)],()=>inspectSource(premium.source,{title:'VIX daily range benchmark',facts:[v.method,'±'+priceText(v.points)+' points · '+v.timestamp]}));root.append(g);
+  }
   if(premium.observation?.ready&&premium.mapping.ready){
    const {lower,upper,anchor}=premium.mapping,g=svg('g',{'data-straddle-bar':'true'}),c='#40ffc1';
    g.append(svg('rect',{x:-62,y:clip(upper),width:14,height:Math.max(2,clip(lower)-clip(upper)),rx:3,fill:c,opacity:.25,stroke:c,'stroke-width':2}));
@@ -76,20 +88,20 @@ export function renderLevelBoard(host,read,{inspectLevel,inspectSource,inspectSc
    root.append(svg('line',{x1:baseX,x2:baseX,y1:top,y2:bottom,stroke:'#486381'}));
    selected.forEach((col,i)=>{
     const rows=canMap?col.rows.filter(r=>r.price+basis>=min&&r.price+basis<=max):[];
-    const comparable=col.id.startsWith('qd-')?selected.filter(c=>c.id.startsWith('qd-')):[col];
-    const scale=Math.max(1,...comparable.flatMap(c=>c.rows).filter(r=>r.price+basis>=min&&r.price+basis<=max).flatMap(r=>(group.label==='DEX'||group.label==='VANNA'?[r.net]:[r.call,r.put,r.net]).filter(Number.isFinite).map(Math.abs)));
+    const scale=seriesScale(col,rows);
     for(const r of rows){const yy=y(r.price+basis),g=svg('g'),od=col.id.startsWith('od-'),oi=col.id.startsWith('qd-oi-strike'),zero=col.id.endsWith('-0dte');
-     const vals=oi?[-r.put,r.call]:group.label==='GAMMA'&&Number.isFinite(r.call)?[r.put,r.call]:[r.net],h=od?3:zero?8:12,offset=od?8:0;
+     const vals=barValues(col,r),h=od?4:zero?22:28,offset=od?16:0;
      for(const v of vals){if(!Number.isFinite(v)||v===0)continue;const width=Math.max(.8,Math.abs(v)/scale*(group.w/2-8)),color=oi?(v>=0?'#67b8ff':'#c797ff'):od?'#ffffff':v>=0?'#40ffc1':'#ff5e90';g.append(svg('rect',{x:v>=0?baseX:baseX-width,y:yy-h/2+offset,width,height:h,fill:color,opacity:od?.9:zero?1:oi||group.ids.length===3?.38:.78}));}
      // Whole row is focusable so small exposures are still inspectable.
      g.append(svg('rect',{x:group.x,y:yy-7+offset,width:group.w,height:od?5:13,fill:'transparent'}));
      const values=oi?'Calls '+compact(r.call)+' · Puts '+compact(r.put):'Net '+signed(r.net)+(Number.isFinite(r.call)&&Number.isFinite(r.put)?' · Call contribution '+signed(r.call)+' · Put contribution '+signed(r.put):'');
-     tip(g,col.title+' · '+priceText(r.price)+' SPX',[col.unit+' · '+col.scope,values,col.source?.data?.limitation||'Provider observation'],()=>inspectSource(col.source,{title:col.title+' · SPX '+priceText(r.price),facts:[col.unit+' · '+col.scope,values]}));root.append(g);
+     tip(g,col.title+' · '+priceText(r.price)+' SPX',[col.unit+' · '+col.scope,values,'Independent series scale · longest visible leg/value '+compact(scale)+' '+col.unit,col.source?.data?.limitation||'Provider observation'],()=>inspectSource(col.source,{title:col.title+' · SPX '+priceText(r.price),facts:[col.unit+' · '+col.scope,values]}));root.append(g);
     }
    });
    root.append(svg('text',{x:group.x,y:H-12,fill:'#8eabd0','font-size':9},group.label==='OPEN INTEREST'?'All dim / session expiry bright':group.label==='GAMMA'?'QD all dim / selected expiry bright · OD white':'QD net signed bars · OD white'));
   }
   const references=[];
+  const gammaSlice=columns.find(c=>c.id==='qd-gamma-0dte');if(canMap)for(const r of gammaConcentrations(gammaSlice,min,max,basis))references.push({price:r.price+basis,name:'≈ QD GEX '+(r.net>0?'+':'')+compact(r.net),source:gammaSlice.source,model:true,detail:'SPX '+r.price+' · expiration '+expiry.value+' · '+gammaSlice.unit+' · call '+signed(r.call)+' / put '+signed(r.put)+' / net '+signed(r.net)+'. One of the six largest gross call/put concentrations in the visible supplied slice. '+conversion.label+'. Source concentration, not a confirmed trade trigger.'});
   for(const [name,data]of [['Futures session',feed?.session],...(!feed?.sessionProfiles?.RTH?[['RTH',feed?.cashSession]]:[]),...Object.entries(feed?.sessionProfiles||{})]){
    if(!data)continue;
    for(const [kind,key]of [['high','high'],['low','low'],['VWAP','vwap']])if(Number.isFinite(data[key]))references.push({price:data[key],name:name+' '+kind,source:read.sources.find(s=>s.id==='databento'),detail:feed.contract+' · '+(data.from||'')+' → '+(data.through||'')+(kind==='VWAP'?' · '+(data.vwapMethod||'trade-weighted'):' · observed session extreme')+(Number.isFinite(data.volume)?' · '+compact(data.volume)+' contracts':'')});
@@ -108,7 +120,7 @@ export function renderLevelBoard(host,read,{inspectLevel,inspectSource,inspectSc
    const text=name+' '+priceText(r.price),width=measure.measureText(text).width+14;
    let x=890;for(const prior of placedReferences.filter(p=>Math.abs(p.y-yy)<12).sort((a,b)=>a.x-b.x)){if(x+width<=prior.x)break;if(x<prior.x+prior.width)x=prior.x+prior.width+8;}
    placedReferences.push({x,y:yy,width});
-   const color=names.some(n=>/POC/i.test(n))?'#ff80df':'#d5e8ff',heading=names.join(' / ')+' · '+priceText(r.price),facts=rows.map(item=>item.name+': '+item.detail);
+   const color=r.model?'#bba3ff':names.some(n=>/POC/i.test(n))?'#ff80df':'#d5e8ff',heading=names.join(' / ')+' · '+priceText(r.price),facts=rows.map(item=>item.name+': '+item.detail);
    g.append(svg('line',{x1:10,x2:1320,y1:yy,y2:yy,stroke:'#afc7e8','stroke-dasharray':names.some(n=>/VWAP/.test(n))?'7 4':'2 4',opacity:.35}),svg('circle',{cx:x,cy:yy,r:2.5,fill:color}),svg('text',{x:x+6,y:yy,'dominant-baseline':'central',fill:color,'font-size':10,stroke:'#061937','stroke-width':3,'paint-order':'stroke'},name+' '+priceText(r.price)));
    tip(g,heading,facts,()=>rows.length===1&&r.level?inspectLevel(r.level):r.source?inspectSource(r.source,{title:heading,facts}):inspectLevel(r.level));referenceLayer.append(g);
   }
@@ -121,11 +133,12 @@ export function renderLevelBoard(host,read,{inspectLevel,inspectSource,inspectSc
    if(label.stars)priceLabel.append(svg('text',{x:10,y:yy,'dominant-baseline':'central',fill:'#ffd34f','font-size':14,class:'wb-confluence-stars'},label.stars));
    tip(priceLabel,d.name+' · '+priceText(l.price),[label.text||d.derivation],()=>inspectLevel(l));priceLabels.append(priceLabel);
    g.append(svg('line',{x1:10,x2:1330,y1:yy,y2:yy,stroke:color,'stroke-width':decision?4:1.5,opacity:decision?1:.6}));
-   g.append(svg('line',{x1:1330,x2:1350,y1:yy,y2:yy,stroke:color,'stroke-width':2}),svg('rect',{x:1350,y:yy-13,width:294,height:38,rx:5,fill:'#0a2548',stroke:color,'stroke-opacity':.6}));
-   const heading=svg('text',{x:1360,y:yy,'dominant-baseline':'central',fill:color,'font-size':14,'font-weight':750},priceText(l.price));
-   if(label.stars)heading.append(svg('tspan',{fill:'#ffd34f',dx:9,class:'wb-confluence-stars'},label.stars));
-   g.append(heading,svg('text',{x:label.stars?1472:1435,y:yy,'dominant-baseline':'central',fill:'#eff8ff','font-size':11,'font-weight':650},d.name.length>31?d.name.slice(0,30)+'…':d.name));
-   if(label.text)g.append(svg('text',{x:1360,y:yy+17,fill:'#aee9df','font-size':10},label.text.length>48?label.text.slice(0,47)+'…':label.text));
+   const brief=briefs.get(l.id),next=levels[levels.indexOf(l)+1],height=next?Math.max(34,Math.min(brief.height,y(next.price)-yy-6)):brief.height;
+   g.append(svg('line',{x1:1330,x2:1350,y1:yy,y2:yy,stroke:color,'stroke-width':2}));
+   const frame=svg('foreignObject',{x:1350,y:yy-14,width:554,height,'data-level-card':l.id}),card=node('div',undefined,'wb-level-card'),header=node('header'),price=node('strong',priceText(l.price));
+   card.style.setProperty('--level',color);if(label.stars)price.append(node('span',' '+label.stars,'wb-confluence-stars'));
+   header.append(price,node('span',d.name));card.append(header,node('p',brief.role,'wb-level-role'),node('p',brief.condition));
+   if(label.text)card.append(node('p',label.text,'wb-level-facts'));if(brief.modelText)card.append(node('p',brief.modelText,'wb-level-context'));frame.append(card);g.append(frame);
    tip(g,d.name+' · '+priceText(l.price),[...(label.text?[label.text]:[]),d.derivation,...items.filter(i=>i.effect==='supports'&&!i.coordinateOnly).slice(0,3).map(i=>i.observation)],()=>inspectLevel(l));root.append(g);
   }
   for(const s of a.scenarios||[]){
@@ -138,7 +151,7 @@ export function renderLevelBoard(host,read,{inspectLevel,inspectSource,inspectSc
     for(const cp of stage.checks){const dot=svg('circle',{cx:x,cy:y(cp.price),r:4,fill:'#071b36',stroke:c,'stroke-width':2});tip(dot,'Checkpoint · '+priceText(cp.price)+' · '+levelDetails(cp,a).name,[cp.evidence,cp.watch],()=>inspectLevel(cp));root.append(dot);}
    }
   }
-  if(Number.isFinite(last))root.append(svg('line',{x1:10,x2:1645,y1:y(last),y2:y(last),stroke:'#2ce2ff','stroke-width':2,'stroke-dasharray':'5 4'}),svg('rect',{x:112,y:y(last)-21,width:176,height:19,rx:3,fill:'#082442'}),svg('text',{x:120,y:y(last)-7,fill:'#42e8ff','font-size':14,'font-weight':700},'Observed '+priceText(last)));
+  if(Number.isFinite(last))root.append(svg('line',{x1:10,x2:1330,y1:y(last),y2:y(last),stroke:'#2ce2ff','stroke-width':2,'stroke-dasharray':'5 4'}),svg('rect',{x:112,y:y(last)-21,width:176,height:19,rx:3,fill:'#082442'}),svg('text',{x:120,y:y(last)-7,fill:'#42e8ff','font-size':14,'font-weight':700},'Observed '+priceText(last)));
   root.append(referenceLayer,priceLabels);plot.append(root);
  }
  range.onchange=()=>setZoom(Number(range.value));expiry.onchange=draw;draw();

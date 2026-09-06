@@ -2,6 +2,7 @@ import {node} from './map.mjs';
 import {renderLevelBoard} from './level-board.mjs';
 import {priceText,levelDetails,scenarioRoute,quoteStatus} from './plan.mjs';
 import {appendPriceEvidence} from './price-evidence.mjs';
+import {renderVerification} from './verification.mjs';
 import {families,familyInventory,conversionFor,exposureColumns,levelConfluence,confluenceSummary,confluenceLabel,compact,signed,familyObservation} from './confluence.mjs';
 
 const family=id=>families.find(f=>f.id===id)||families[0];
@@ -51,6 +52,7 @@ export function renderWorkbench(host,read,{panelButton,chartButton}={}){
  const thesis=el('div',undefined,'wb-thesis');thesis.append(el('strong',a.headline),el('span',conversion.label,'wb-basis'));
  if(conversion.reference)thesis.append(el('small','Anchor observations: ES '+priceText(conversion.reference.esPrice)+' at '+when(conversion.reference.esTime)+' / SPX '+priceText(conversion.reference.spxPrice)+' at '+when(conversion.reference.spxTime)+'. Approximate model overlays only.'));
  host.append(thesis);
+ host.append(renderVerification(read,{inspectLevel}));
  const strip=el('div',undefined,'wb-family-strip');
  for(const f of inventory){const reviewed=f.items.filter(i=>['reviewed','partial','context','forward-model'].includes(i.status)),b=button('',()=>inspectFamily(f),'wb-family');b.style.setProperty('--family',f.color);b.append(el('span',f.label),el('strong',reviewed.length?reviewed.length+' reviewed':f.items.some(i=>i.status==='not-reviewed')?'Awaiting analysis':f.items.length?'Unavailable':'Not supplied'),el('p',familyObservation(read,f.id)||'','wb-family-observation'),el('small',f.items.some(i=>i.status==='forward-model')?'Includes forward model':f.items.some(i=>i.status==='partial')?'Partial coverage':reviewed.length?'Open findings & charts':f.items.some(i=>i.status==='not-reviewed')?'Data supplied · read pending':'Visible coverage gap'));strip.append(b);}host.append(strip);
  const board=el('section',undefined,'wb-confluence-board');host.append(board);renderLevelBoard(board,read,{inspectLevel,inspectScenario:s=>{const card=right.querySelector('[data-direction="'+s.direction+'"]');if(card){card.open=true;card.scrollIntoView({block:'nearest',behavior:'smooth'});}},inspectSource:(source,context)=>{if(!source)return;show(context?.title||source.title,source.data?.scope||read.date);for(const fact of context?.facts||[])body.append(el('p',fact));sourceDetail(source);}});

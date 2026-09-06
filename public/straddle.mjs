@@ -57,3 +57,10 @@ export function esPremiumRange(observation,feed){
  if(Math.abs(basis)>200)return {ready:false,message:'ES and SPX failed the basis plausibility check.'};
  return {ready:true,anchor,basis,lower:anchor-observation.premium,upper:anchor+observation.premium,contract:feed.contract,timestamp:observation.timestamp};
 }
+
+export function vixDailyRange(observation,mapping){
+ if(!observation?.ready||!mapping?.ready||![observation.spot,observation.vix,mapping.anchor].every(positive))return {ready:false};
+ const points=observation.spot*observation.vix/100/Math.sqrt(252);
+ return {ready:true,points,lower:mapping.anchor-points,upper:mapping.anchor+points,anchor:mapping.anchor,timestamp:observation.timestamp,
+  method:'SPX × VIX / 100 / √252, centered on the matching ES observation. One-day volatility scaling benchmark; VIX measures a longer options horizon. Not a guaranteed range or additional straddle premium.'};
+}
