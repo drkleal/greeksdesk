@@ -59,15 +59,15 @@ async function analyzeEvidence(){
  const selected=[...sources,...charts].filter(s=>s.sessionDate===date&&s.id!=='timestamps');
  if(!selected.length){message('Update market data or attach a chart before analyzing.');return false;}
  const version=revision,packet={date,instrument,basis:instrument==='ES'?($('basis').value===''?null:Number($('basis').value)):0,sources:selected,previous:read?.date===date&&read.instrument===instrument?read.result.analysis.summary:''};
- analyses++;usage();message('Analyzing '+selected.filter(s=>s.image).length+' chart image(s) and '+selected.filter(s=>s.data).length+' data source(s) for '+date+'…');
+ const started=Date.now(),progress='Analyzing '+selected.filter(s=>s.image).length+' chart image(s) and '+selected.filter(s=>s.data).length+' data source(s) for '+date;analyses++;usage();message(progress+'…');const progressTimer=setInterval(()=>message(progress+' · '+Math.floor((Date.now()-started)/1000)+' seconds'),1000);
  try{
-  const response=await fetch('/api/analyze',{method:'POST',signal:AbortSignal.timeout(110000),headers:{'Content-Type':'application/json','X-GreeksDesk-Action':'manual-check'},body:JSON.stringify(packet)});
-  if(!response.ok)throw Error('Analysis request failed. Check chart size, dates and sign-in.');const result=await response.json();
+  const response=await fetch('/api/analyze',{method:'POST',signal:AbortSignal.timeout(160000),headers:{'Content-Type':'application/json','X-GreeksDesk-Action':'manual-check'},body:JSON.stringify(packet)});
+  clearInterval(progressTimer);if(!response.ok)throw Error('Analysis request failed. Check chart size, dates and sign-in.');const result=await response.json();
   if(!result.ok)throw Error(result.message);if(version!==revision){message('Inputs changed during analysis. The result was not applied.');return false;}
   read={id:new Date().toISOString(),date,instrument,basis:packet.basis,sources:structuredClone(selected),result};renderRead();
   try{await saveRead(read);await refreshHistory();}catch{message('Analysis ready. Local history could not be saved; download this read.');return true;}
   message(result.model==='source-reference-summary'?'Source references ready. Add a chart to develop scenarios; no OpenAI request was needed.':(result.analysis.levels.length?'Analysis ready. Click a level to inspect the original evidence.':'Chart review complete. No supported '+instrument+' levels yet; see the panel findings and missing evidence below.'));return true;
- }catch(error){message(error.message);if(read){$('read-state').textContent='Previous read only';$('read-time').textContent='Latest analysis failed · previous analysis remains visible.';}return false;}
+ }catch(error){clearInterval(progressTimer);message(error.message);if(read){$('read-state').textContent='Previous read only';$('read-time').textContent='Latest analysis failed · previous analysis remains visible.';}return false;}
 }
 const loop=createUpdateLoop({run:async()=>{if(busy||!valid())return false;if(loop.status().active&&$('session').value!==today()){message('Session date changed at midnight. Auto stopped.');return false;}lock(true);try{const ok=await updateData();if(ok&&$('auto-analysis').checked)return await analyzeEvidence();return ok;}catch(e){message(e.message);return false;}finally{lock(false);}},notify:s=>{$('auto').textContent=s.active?'Auto: ON · Stop':'Auto: OFF';$('auto').setAttribute('aria-pressed',String(s.active));$('interval').disabled=s.active;$('duration').disabled=s.active;if(!s.busy&&s.active)message(s.message+' · '+s.remaining+' cycles left');}});
 $('update').addEventListener('click',async()=>{if(busy||!valid())return;lock(true);try{await updateData();}catch(e){message(e.message);}finally{lock(false);}});

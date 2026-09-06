@@ -6,7 +6,7 @@ Private scenario desk at greeksdesk.drklealtrades.com. Sign in as drkleal using 
 
 Choose a session date, then Update data. Net Drift and model timestamp availability are fetched on demand. Optional Gamma uses one paid heatmap request near SPX (plus provider caching). Analyze selected evidence sends the selected results and chart images to OpenAI and creates a conditional map with at most six source-linked levels. Missing evidence is shown rather than filled with historical example levels.
 
-The default map uses SPX. ES requires a user-supplied ES-minus-SPX basis; it is not a futures quote feed. The historical design remains at /preview. Connection diagnostics remain at /connections.
+The default map uses ES. Paste an original ES price chart to build native ES scenarios without an ES–SPX basis. If the instrument/date header is cropped, the chart owner can confirm ES and the selected session; this metadata remains explicitly labeled as owner supplied. Numeric levels must still come from a legible chart. A matched ES–SPX basis is needed only to convert SPX coordinates. After-hours ES is usable directly, but a later ES quote minus frozen cash SPX is not treated as a synchronized basis. The historical design remains at /preview. Connection diagnostics remain at /connections.
 
 Share chart tab uses the browser's screen-sharing picker. While sharing is active, each data update captures the selected surface. Attach or paste PNG/JPEG/WebP images as an alternative. Source URLs open the original platform; a URL does not grant access to signed-in charts. Capture time is not market-data time. Up to four images per read are resized locally before analysis.
 
@@ -24,7 +24,7 @@ Run node --test locally. npm start requires DESK_PASSWORD. No npm dependencies.
 
 ## Interpretation and usage limits
 
-Model output is conditional interpretation, not guaranteed chart extraction or validated trading signals. Check level provenance, price response, timestamp and expiry scope. Signed premium is not automatically directional buying/selling; Gamma heatmap coordinates are not automatically strikes or support/resistance. Generated ES conversions rely on the entered basis.
+Model output is conditional interpretation, not guaranteed chart extraction or validated trading signals. Check level provenance, price response, timestamp and expiry scope. Signed premium is not automatically directional buying/selling; Gamma heatmap coordinates are not automatically strikes or support/resistance. Generated ES conversions rely on the displayed basis. The ES chart price card uses the screenshot observation, not a relabeled SPX API quote. OptionsDepth forward-session models remain planning context, with their displayed target date, rather than same-session observed ES levels.
 
 Provider caches and analysis concurrency limits apply per machine, not across the account. Separate tabs/devices/machines can incur separate costs. Paid API unit charges are set by the provider; the interface shows request counts rather than an invented dollar estimate. The app does not yet supply a hard account-wide spending cap, live ES/NQ feed, independent browser collector, or persistent cloud history.
 
@@ -36,4 +36,4 @@ The optional unpacked Chrome extension in `browser-connector/` captures up to fo
 
 Update & analyze captures selected chart viewports, refreshes API sources, and requests analysis. Auto captures on the existing bounded schedule; AI analysis remains opt-in. Selected charts must remain open, signed in and rendered. This does not capture off-screen panels or turn a provider URL into an embedded live panel. Level evidence can open the saved capture in an in-app dialog; the external platform link is separate.
 
-The extension uses Chrome debugger solely for Page.captureScreenshot, validates supported chart URLs before and after capture, and detaches afterward. It does not read cookies or API secrets, activate tabs, navigate, or trade. Browser end-to-end capture still requires verification after installation.
+The extension uses Chrome debugger solely for Page.captureScreenshot, validates supported chart URLs before and after capture, and detaches afterward. It does not read cookies or API secrets, activate tabs, navigate, or trade. Both selected Quant Data and OptionsDepth tabs were verified returning captures in the live desk on September 5, 2026. That verifies capture transport, not the accuracy or freshness of every panel's data.
