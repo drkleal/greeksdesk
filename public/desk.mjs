@@ -1,6 +1,6 @@
 import {connectorRequest} from './connector.mjs';
 import {createUpdateLoop} from './update-loop.mjs';
-import {startChartShare,resizeChart,listReads,saveRead,loadESDraft,saveESDraft} from './capture.mjs';
+import {startChartShare,resizeChart,listReads,saveRead,loadESDraft,saveESDraft,chartImageBlob} from './capture.mjs';
 import {node,renderMap,sourceLink} from './map.mjs';
 import {today,initialSession,validDate} from './session.mjs';
 const $=id=>document.getElementById(id);
@@ -98,5 +98,5 @@ $('apply-basis').addEventListener('click',()=>{if(!basisProposal||busy||basisPro
 
 $('paste-es').addEventListener('click',()=>{$('paste-es').focus();});
 
-$('retry-basis').addEventListener('click',async()=>{const chart=charts.find(c=>c.id==='es-snapshot');if(!chart||busy)return;await inspectES(await(await fetch(chart.image)).blob());});
+$('retry-basis').addEventListener('click',async()=>{if(busy)return;const chart=charts.find(c=>c.id==='es-snapshot');if(!chart){$('basis-result').textContent='Paste your ES screenshot in the box above first.';return;}try{await inspectES(chartImageBlob(chart.image));}catch(error){$('basis-result').textContent=error.message;}});
 loadESDraft($('session').value).then(draft=>{if(!draft||charts.some(c=>c.id==='es-snapshot')||draft.sessionDate!==$('session').value)return;charts.push({...draft,id:'es-snapshot'});$('es-preview').src=draft.image;$('es-preview').hidden=false;showCharts();$('basis-result').textContent='Saved ES screenshot restored for '+draft.sessionDate+'. Read the basis again to verify its prices and time, or analyze native ES chart levels.';}).catch(()=>{});

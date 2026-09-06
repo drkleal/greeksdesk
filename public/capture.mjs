@@ -1,4 +1,9 @@
 // Local capture and history: images are not transmitted by this module.
+export function chartImageBlob(image){
+ const match=typeof image==='string'&&image.match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/);
+ if(!match||image.length>6000000)throw Error('The saved chart image is unreadable. Paste a fresh ES screenshot.');
+ return new Blob([Uint8Array.from(atob(match[2]),c=>c.charCodeAt(0))],{type:match[1]});
+}
 export async function resizeChart(blob){
  if(!['image/png','image/jpeg','image/webp'].includes(blob.type)||blob.size>15000000)throw Error('Choose a PNG, JPEG or WebP smaller than 15 MB.');
  const bitmap=await createImageBitmap(blob);const scale=Math.min(1,3200/bitmap.width,3200/bitmap.height);
