@@ -16,8 +16,8 @@ export function evidenceCoverage(read){
 }
 export function renderEvidence(read,{panelButton,chartButton,onLevel}){
  const a=read.result.analysis,host=document.getElementById('panel-review'),guide=document.getElementById('level-guide');host.replaceChildren();guide.replaceChildren();
- const coverage=evidenceCoverage(read),reviewed=coverage.filter(i=>['reviewed','partial','context','forward-model'].includes(i.status)).length;
- document.getElementById('coverage-summary').textContent=reviewed+' of '+coverage.length+' supplied panels / API feeds reviewed · '+new Date(read.result.checkedAt).toLocaleTimeString();
+ const coverage=evidenceCoverage(read),reviewed=coverage.filter(i=>['reviewed','partial','context','forward-model','excluded'].includes(i.status)).length,excluded=coverage.filter(i=>i.status==='excluded').length;
+ document.getElementById('coverage-summary').textContent=reviewed+' of '+coverage.length+' supplied panels / API feeds reviewed'+(excluded?' · '+excluded+' excluded with reasons':'')+' · '+new Date(read.result.checkedAt).toLocaleTimeString();
  for(const item of coverage){
   const card=node('details',undefined,'evidence-card '+item.status);card.dataset.evidenceId=item.id;
   const top=node('summary'),label=node('span',item.title),badge=node('small',({'not-reviewed':'Not reviewed','forward-model':'Next-session model',partial:'Partial data',reviewed:'Reviewed',context:'Context',excluded:'Excluded',unavailable:'Unavailable'})[item.status],'evidence-badge');top.append(label,badge);card.append(top);

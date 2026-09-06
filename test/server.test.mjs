@@ -23,6 +23,12 @@ test('private preview is locked, health stays available, and authenticated page 
     assert.equal((await fetch(base + '/server.mjs', { headers })).status, 404);
     const policy=await fetch(base+'/evidence-policy.mjs',{headers});
     assert.equal(policy.status,200);assert.match(policy.headers.get('content-type'),/javascript/);assert.match(await policy.text(),/enforceEvidenceScope/);
+    // Every browser module dependency must actually be served; a missing import blanks the desk.
+    const pending=['/desk.mjs'],seen=new Set();
+    while(pending.length){const path=pending.pop();if(seen.has(path))continue;seen.add(path);
+      const module=await fetch(base+path,{headers});assert.equal(module.status,200,path);assert.match(module.headers.get('content-type'),/javascript/,path);
+      for(const match of (await module.text()).matchAll(/from\s+['"]\.\/([^'"]+)['"]/g))pending.push('/'+match[1]);
+    }
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
 
