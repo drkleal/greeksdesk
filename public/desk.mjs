@@ -3,7 +3,7 @@ import {createUpdateLoop} from './update-loop.mjs';
 import {startChartShare,resizeChart,listReads,saveRead,loadESDraft,saveESDraft,chartImageBlob} from './capture.mjs';
 import {node,renderMap,sourceLink} from './map.mjs';
 import {renderEvidence,showEvidenceTab,focusEvidence} from './evidence.mjs';
-import {levelDetails,priceText,directionTitle} from './plan.mjs';
+import {levelDetails,priceText,directionTitle,setupRoom} from './plan.mjs';
 import {today,initialSession,validDate} from './session.mjs';
 const $=id=>document.getElementById(id);
 let savedSession;try{savedSession=JSON.parse(localStorage.getItem('greeksdesk-session'));}catch{}
@@ -61,7 +61,8 @@ function selectScenario(s){const card=$('scenario-'+s.direction);for(const c of 
 function renderRead(){compactES(true);$('data-session').textContent=read.date;$('data-freshness').textContent=read.date===today()?'Check each source observation time below.':'Historical session · not current market data';showPrice(read.sources,read.sources,read.instrument);renderPanels();const a=read.result.analysis;$('map-basis').textContent=read.instrument==='ES'?(Number.isFinite(read.basis)?'Basis used for this read: ES − SPX = '+read.basis+' points.':'Native ES levels · no ES–SPX conversion applied.'):'SPX coordinates';$('headline').textContent=a.headline;$('summary').textContent=a.summary;$('map-unit').textContent=read.instrument;$('read-state').textContent=read.date===today()?'Conditional read':'Historical read';$('read-time').textContent='Analyzed '+new Date(read.result.checkedAt).toLocaleString();renderMap($('map'),a,read.instrument,explain,selectScenario);$('level-list').replaceChildren();
  $('scenarios').replaceChildren();for(const s of a.scenarios){
   const card=node('div',undefined,'scenario '+s.direction);card.id='scenario-'+s.direction;card.tabIndex=-1;
-  card.append(node('strong',directionTitle(s.direction)),node('p',s.status==='insufficient'?'Not established · '+s.condition:s.condition));
+  const room=setupRoom(s,a.levels);
+  card.append(node('strong',directionTitle(s.direction)),node('p',room.text,'setup-room'),node('p',s.status==='insufficient'?'Not established · '+s.condition:s.condition));
   if(s.rationale)card.append(node('p',s.rationale,'scenario-reason'));
   card.append(node('p','Confirmation: '+s.confirmation),node('p','Invalidation: '+s.invalidation));
   for(const id of [s.triggerId,s.targetId]){const l=a.levels.find(l=>l.id===id);if(l){const b=node('button',(id===s.triggerId?'Trigger ':'Destination ')+priceText(l.price)+' · '+levelDetails(l,a).name);b.addEventListener('click',()=>explain(l));card.append(b);}}

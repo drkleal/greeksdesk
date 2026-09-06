@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {exposureSnapshot,intervalPath,darkPoolLevels,createMarketContext} from '../market-context.mjs';
 import {evidenceCoverage} from '../public/evidence.mjs';
-import {pathDirectionValid,levelDetails} from '../public/plan.mjs';
+import {pathDirectionValid,levelDetails,decisionZones,setupRoom} from '../public/plan.mjs';
 test('exposure ranks complete strikes without treating absent legs as zero',()=>{
  const r=exposureSnapshot({data:{SPX:{stockPrice:7717,exposureMap:{'2026-09-04':{'7715':{callExposure:200,putExposure:-50},'7720':{callExposure:999}},'2026-09-11':{'7715':{callExposure:80,putExposure:-10}}}}}});
  assert.equal(r.strongest.length,1);assert.equal(r.strongest[0].net,220);assert.equal(r.incompleteLegPairs,1);assert.equal(r.strikeCount,2);
@@ -34,4 +34,11 @@ test('path direction cannot reverse prices or use a last-price marker as a targe
 test('legacy reference labels expose an unidentified indicator rather than inventing a Greek',()=>{
  const d=levelDetails({role:'model_reference',label:'ES reference',evidence:'Red horizontal line'});
  assert.equal(d.name,'Chart line · indicator unknown');assert.equal(d.category,'drawing');
+});
+test('nearby prices form one decision zone and missing or half-point destinations are watch-only',()=>{
+ const levels=[{id:'a',price:7715.5,role:'structure'},{id:'b',price:7716,role:'structure'},{id:'c',price:7722.75,role:'structure'},{id:'q',price:7715,role:'last_price'}];
+ const zones=decisionZones(levels);assert.equal(zones.length,2);assert.deepEqual(zones[1].members.map(l=>l.id),['b','a']);
+ assert.equal(setupRoom({status:'conditional',triggerId:'a',targetId:'b'},levels).eligible,false);
+ assert.equal(setupRoom({status:'conditional',triggerId:'a',targetId:null},levels).eligible,false);
+ assert.equal(setupRoom({status:'conditional',triggerId:'b',targetId:'c'},levels).points,6.75);
 });

@@ -17,3 +17,15 @@ export function pathDirectionValid(s,levels){
 }
 export const directionTitle=d=>({up:'↑ Upside',down:'↓ Downside',neutral:'↔ Neutral'})[d];
 export const levelColors={support:'#36ffb1',resistance:'#ff4f85',gamma:'#c899ff',delta:'#ffb34f',vanna:'#ef96ff',charm:'#73baff',dark_pool:'#ffe85c',reference:'#27e5ff',other:'#ffe85c'};
+
+export function decisionZones(levels, tolerance=1){
+ const sorted=levels.filter(l=>l.role==="structure").sort((a,b)=>b.price-a.price), zones=[];
+ for(const l of sorted){const z=zones.at(-1);if(z&&z.high-l.price<=tolerance){z.low=l.price;z.members.push(l);}else zones.push({id:l.id,high:l.price,low:l.price,members:[l]});}
+ return zones;
+}
+export function setupRoom(s,levels){
+ const from=levels.find(l=>l.id===s.triggerId),to=levels.find(l=>l.id===s.targetId);
+ if(s.status!=="conditional"||!from||!to)return {eligible:false,text:"Watch only · no verified destination"};
+ const points=Math.abs(to.price-from.price);
+ return {eligible:points>1,points,text:points<=1?"Watch only · nearby prices are one decision zone":priceText(points)+" points to the reference · risk/reward not yet established"};
+}

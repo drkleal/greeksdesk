@@ -1,5 +1,5 @@
 import {node} from './map.mjs';
-import {levelDetails,priceText,levelColors,directionTitle} from './plan.mjs';
+import {levelDetails,priceText,levelColors,directionTitle,decisionZones} from './plan.mjs';
 export function evidenceCoverage(read){
  const a=read.result.analysis,items=[];
  for(const source of read.sources){
@@ -33,9 +33,11 @@ export function renderEvidence(read,{panelButton,chartButton,onLevel}){
   if(item.source.data){const data=node('details');data.append(node('summary','Exact returned data'),node('pre',JSON.stringify(item.source.data,null,2)));card.append(data);}
   host.append(card);
  }
+ const zones=decisionZones(a.levels);
  for(const [i,l]of [...a.levels].sort((x,y)=>y.price-x.price).entries()){
   const d=levelDetails(l,a),button=node('button',undefined,'level-key');button.dataset.levelId=l.id;button.style.setProperty('--level-color',levelColors[l.kind]||levelColors.other);
-  button.append(node('span','L'+(i+1)+' · '+priceText(l.price)+' '+read.instrument,'key-price'),node('strong',d.name),node('small',d.badge),node('span',d.description),node('small',d.source));
+  const zi=zones.findIndex(z=>z.members.some(m=>m.id===l.id));
+  button.append(node('span',(zi>=0?'Z'+(zi+1):'Reference')+' · '+priceText(l.price)+' '+read.instrument,'key-price'),node('strong',d.name),node('small',d.badge),node('span',d.description),node('small',d.source));
   button.addEventListener('click',()=>onLevel(l));guide.append(button);
  }
  if(!a.levels.length)guide.append(node('p','No verified levels in this read. The Evidence tab explains the gaps.'));

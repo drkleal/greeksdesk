@@ -1,4 +1,4 @@
-import {levelColors,levelDetails,priceText,pathDirectionValid,directionTitle} from './plan.mjs';
+import {levelColors,levelDetails,priceText,pathDirectionValid,directionTitle,decisionZones,setupRoom} from './plan.mjs';
 export const node=(tag,text,cls)=>{const el=document.createElement(tag);if(text!==undefined)el.textContent=text;if(cls)el.className=cls;return el;};
 const svgNode=(tag,attrs={})=>{const el=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [k,v]of Object.entries(attrs))el.setAttribute(k,String(v));return el;};
 // Labels have their own collision-free positions. Price lines keep the linear scale.
@@ -12,23 +12,28 @@ export function renderMap(host,analysis,instrument,onSelect,onScenario=()=>{}){
  host.replaceChildren();host.classList.remove('empty');
  const levels=[...analysis.levels].sort((a,b)=>b.price-a.price);
  if(!levels.length){host.classList.add('empty');host.textContent='No verified levels yet. See the evidence findings on the left.';return;}
- const height=Math.max(440,levels.length*84+110),svg=svgNode('svg',{viewBox:`0 0 660 ${height}`,role:'group','aria-label':instrument+' conditional plan. Ordered prices with schematic spacing.'});
- const y=id=>65+levels.findIndex(l=>l.id===id)*84;
+ const zones=decisionZones(levels);
+ if(!zones.length){host.classList.add('empty');host.textContent='Watch only. No established price-reaction zones in this read. References remain in the Level key.';return;}
+ const height=Math.max(340,zones.length*100+110),svg=svgNode('svg',{viewBox:`0 0 660 ${height}`,role:'group','aria-label':instrument+' conditional plan. Nearby structural levels form decision zones.'});
+ const y=id=>65+zones.findIndex(z=>z.members.some(l=>l.id===id))*100;
  const defs=svgNode('defs');
  for(const [id,color]of [['up','#36ffb1'],['down','#ff4f85'],['neutral','#ffe85c']]){const m=svgNode('marker',{id:'arrow-'+id,viewBox:'0 0 12 12',refX:10,refY:6,markerWidth:5,markerHeight:5,orient:'auto-start-reverse'});m.append(svgNode('path',{d:'M 1 1 L 11 6 L 1 11 Z',fill:color}));defs.append(m);}
  svg.append(defs);
- for(const [i,l]of levels.entries()){
+ for(const [i,z]of zones.entries()){
+  const l=z.members[0],label=z.low===z.high?priceText(z.high):priceText(z.low)+'–'+priceText(z.high);
   const color=levelColors[l.kind]||levelColors.other,py=y(l.id),d=levelDetails(l,analysis),g=svgNode('g',{role:'button',tabindex:0,'aria-label':`L${i+1} ${priceText(l.price)} ${d.name}; show identity and evidence`});
   g.append(svgNode('rect',{x:12,y:py-22,width:636,height:44,rx:5,fill:'transparent'}));
-  g.append(svgNode('line',{x1:165,x2:630,y1:py,y2:py,stroke:color,'stroke-width':l.role==='structure'?2:1.3,'stroke-dasharray':l.role==='structure'?'none':'3 5',opacity:.85}));
-  g.append(svgNode('rect',{x:14,y:py-22,width:144,height:44,rx:6,fill:'#07344e',stroke:color}));
+  g.append(svgNode('line',{x1:208,x2:630,y1:py,y2:py,stroke:color,'stroke-width':2,opacity:.85}));
+  g.append(svgNode('rect',{x:14,y:py-22,width:186,height:44,rx:6,fill:'#07344e',stroke:color}));
   const key=svgNode('text',{x:24,y:py+5,class:'level-key-code'});key.textContent='L'+(i+1);
-  const price=svgNode('text',{x:56,y:py+5,class:'level-price'});price.textContent=priceText(l.price);
+  key.textContent='Z'+(i+1);
+  const price=svgNode('text',{x:49,y:py+5,class:'level-price',style:z.low!==z.high?'font-size:12px':''});price.textContent=label;
+  g.setAttribute('aria-label','Decision zone '+label+' '+instrument+'; show source evidence');
   const title=svgNode('title');title.textContent=d.name+' — '+d.description;g.append(key,price,title);
   g.addEventListener('click',()=>onSelect(l));g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();onSelect(l);}});svg.append(g);
  }
  for(const s of analysis.scenarios){
-  if(s.status!=='conditional'||!pathDirectionValid(s,levels))continue;
+  if(s.status!=='conditional'||!pathDirectionValid(s,levels)||!setupRoom(s,levels).eligible||y(s.triggerId)===y(s.targetId))continue;
   const lane=s.direction==='up'?245:s.direction==='down'?405:555,start=y(s.triggerId),end=s.targetId?y(s.targetId):start+(s.direction==='up'?-42:42),color=s.direction==='up'?'#36ffb1':s.direction==='down'?'#ff4f85':'#ffe85c';
   const g=svgNode('g',{role:'button',tabindex:0,'aria-label':directionTitle(s.direction)+' conditional path: '+s.condition});
   const path=`M ${lane} ${start} L ${lane+28} ${start+(end-start)*.28} L ${lane+28} ${end}`;
