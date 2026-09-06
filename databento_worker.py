@@ -47,6 +47,29 @@ def safe_error(exc):
     return 'Databento could not supply this ES request. No automatic retry was made.'
 
 
+def resolve_contract(client, symbol, date):
+    if symbol != 'ES.v.0':
+        return symbol
+    # Databento allows continuous -> instrument_id -> raw_symbol, not a direct
+    # continuous -> raw_symbol conversion. Keep both mappings date-specific.
+    params = dict(dataset=DATASET, start_date=date, end_date=date + timedelta(days=1))
+    resolved = client.symbology.resolve(symbols=[symbol], stype_in='continuous',
+                                      stype_out='instrument_id', **params)
+    ids = {str(row['s']) for row in resolved.get('result', {}).get(symbol, [])}
+    if len(ids) != 1 or not next(iter(ids)).isdigit():
+        raise ValueError('No unique ES instrument')
+    instrument = ids.pop()
+    named = client.symbology.resolve(symbols=[instrument], stype_in='instrument_id',
+                                   stype_out='raw_symbol', **params)
+    names = {row['s'] for row in named.get('result', {}).get(instrument, [])}
+    if len(names) != 1:
+        raise ValueError('No unique ES contract')
+    contract = names.pop()
+    if not re.fullmatch(r'ES[HMUZ][0-9]{1,2}', contract):
+        raise ValueError('Unexpected ES mapping')
+    return contract
+
+
 def read(request):
     import databento as db
     date = datetime.strptime(request['date'], '%Y-%m-%d').date()
@@ -59,14 +82,7 @@ def read(request):
     if start >= now:
         return {'ok': False, 'message': 'The selected ES session has not begun.'}
     historical = db.Historical()
-    raw_symbol = symbol
-    if symbol == 'ES.v.0':
-        resolved = historical.symbology.resolve(dataset=DATASET, symbols=[symbol], stype_in='continuous',
-            stype_out='raw_symbol', start_date=date, end_date=date + timedelta(days=1))
-        matches = {row['s'] for row in resolved.get('result', {}).get(symbol, [])}
-        if len(matches) != 1:
-            return {'ok': False, 'message': 'Databento did not identify a single ES contract for this date.'}
-        raw_symbol = matches.pop()
+    raw_symbol = resolve_contract(historical, symbol, date)
     if not re.fullmatch(r'ES[HMUZ][0-9]{1,2}', raw_symbol):
         raise ValueError('Unexpected ES mapping')
 
