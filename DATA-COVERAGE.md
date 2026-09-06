@@ -20,6 +20,8 @@ Documentation: [Exposure by strike](https://quantdata.us/api/docs/endpoints/expo
 
 OptionsDepth timestamps establish availability only. The optional Gamma request reads one model slice and may consume units; its cache lasts ten minutes. Captured provider panels remain original images. The connector measures visible panel titles and boundaries; hidden/offscreen panels are not automatically captured. The evidence desk explicitly lists captured panels omitted from the analysis. Next-session models are planning context, separate from observed-session prices.
 
+Paid Gamma access was verified on September 6 using the deployed provider reader: one request for September 4 and SPX 7657–7778 returned 4,459 price/time rows. The reader kept 49 prices from the returned 16:00 heatmap time coordinate at or before the requested 17:00 slot, without summing other time coordinates. The provider's `sim_datetime` field has no timezone suffix; it does not establish the model update time or an observed-price timestamp. Values and scaling still require comparison with the matching OptionsDepth display before directional interpretation.
+
 Pasted DeepCharts images provide native ES observations. They remain snapshots until replaced. An ES–SPX conversion requires the existing matched-time basis checks.
 
 ## Databento ES prices
@@ -38,6 +40,6 @@ Verification on September 6 found 5,283 omitted legs, no explicit nulls, and 561
 
 Truly partial exposure feeds have a visible Partial data badge. Their findings remain reviewable; the badge never implies complete market coverage. A fresh price sample ages into Stale sample after twenty seconds in the browser, without triggering another request.
 
-Scenario drivers link to source findings, including opposing evidence. Unavailable feeds and excluded panels cannot be marked as support; next-session models remain context. Earlier API observations are supplied for comparisons only within the same selected session and instrument; the analyst must also match filters, units and observation times. Repeated snapshots are not new market movement.
+Scenario drivers link to source findings, including opposing evidence. Unavailable feeds and excluded panels cannot be marked as support; next-session models remain context. SPX prices without a matched ES–SPX basis cannot be described as nearby ES support/resistance, including in narrative drivers. API-only Greek signs remain model context rather than directional confirmation. These checks also apply when displaying saved evidence; older plans require rebuilding. Original-panel viewers distinguish the displayed model date, the analysis session and the capture time. Earlier API observations are supplied for comparisons only within the same selected session and instrument; the analyst must also match filters, units and observation times. Repeated snapshots are not new market movement.
 
 Automated checks verify these mechanics. They do not establish prediction accuracy. New API values still need comparison with the provider UI, and real-time behavior needs observed-session validation.

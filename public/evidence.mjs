@@ -1,4 +1,5 @@
 import {node} from './map.mjs';
+import {evidenceMetadata} from './evidence-policy.mjs';
 import {levelDetails,priceText,levelColors,directionTitle,decisionZones} from './plan.mjs';
 export function evidenceCoverage(read){
  const a=read.result.analysis,items=[];
@@ -23,7 +24,7 @@ export function renderEvidence(read,{panelButton,chartButton,onLevel}){
   const p=item.panel,s=item.insight;
   if(item.status==='partial')card.append(node('p','Some exposure legs are missing. Rankings cover complete strikes only; this feed does not establish the full-market exposure profile.','warn'));
   top.append(node('span',p?.shows||s?.shows||item.source.data?.message||'Supplied without a returned finding. Not counted as support.','evidence-observation'));
-  card.append(node('p',(p?p.instrument+' · '+p.observedDate:item.source.data?.ticker+' · '+item.source.sessionDate),'muted'));
+  card.append(node('p',evidenceMetadata(item.source,p),'muted'));
   if(p?.reason||s?.importance)card.append(node('h3','Why it matters'),node('p',p?.reason||s.importance));
   if(s?.change)card.append(node('h3','What changed'),node('p',s.change));
   if(s?.priceEffect)card.append(node('h3','Possible effect on price'),node('p',s.priceEffect));

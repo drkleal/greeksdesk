@@ -14,6 +14,8 @@ test('private preview is locked, health stays available, and authenticated page 
     assert.equal(page.status, 200);
     assert.match(await page.text(), /scenario desk/);
     assert.equal((await fetch(base + '/server.mjs', { headers })).status, 404);
+    const policy=await fetch(base+'/evidence-policy.mjs',{headers});
+    assert.equal(policy.status,200);assert.match(policy.headers.get('content-type'),/javascript/);assert.match(await policy.text(),/enforceEvidenceScope/);
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
 

@@ -8,6 +8,7 @@ test('Gamma request stays scoped, strips extra fields, caches duplicates and rej
  }});
  const selection={slot:'2026-09-04T16:00:00',min:7650,max:7800};const result=await check('optionsdepth-gamma','2026-09-04',selection);
  assert.equal(result.ok,true);assert.equal(result.rows[0].value,-3);assert.ok(!JSON.stringify(result).includes('privateField'));
+ assert.equal(result.ticker,'SPX');assert.equal(result.timeRole,'heatmap_coordinate');assert.equal(result.modelUpdatedAt,null);assert.equal(result.timezone,null);assert.match(result.message,/does not establish the model update time/);
  assert.equal((await check('optionsdepth-gamma','2026-09-04',selection)).cached,true);assert.equal(requests,1);
  await assert.rejects(check('optionsdepth-gamma','2026-09-04',{...selection,max:9000}));assert.equal(requests,1);
 });
