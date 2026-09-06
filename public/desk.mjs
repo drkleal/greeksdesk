@@ -11,11 +11,12 @@ $('session').value=initialSession(savedSession);
 $('map-unit').textContent=$('instrument').value;
 function rememberSession(){try{localStorage.setItem('greeksdesk-session',JSON.stringify({date:$('session').value,savedOn:today()}));}catch{}}
 rememberSession();
-let connectorEnabled=false;
+let connectorEnabled=false,databentoConfigured=false;
+let appConfig;
 let sources=[],charts=[],read=null,share=null,busy=false,revision=0,cycles=0,analyses=0,manualMode=null,lastUpdateWarnings=[];
 const links={quantdata:'https://v3.quantdata.us/page/custom/4e4699d7-e026-4cd8-9f43-24c832d25857',gamma:'https://app.optionsdepth.com/dashboard?tab=table'};
 const message=t=>$('status').textContent=t;
-function lock(value){busy=value;for(const id of ['update','analyze','session','instrument','basis','include-gamma','auto-analysis','upload','share','connect-charts','es-image','confirm-es','es-price-time','retry-basis','analyze-es'])$(id).disabled=value;}
+function lock(value){busy=value;for(const id of ['update','analyze','session','instrument','basis','include-gamma','auto-analysis','upload','share','connect-charts','es-image','confirm-es','es-price-time','retry-basis','analyze-es','es-contract'])$(id).disabled=value;}
 function usage(){$('usage').textContent=`This tab: ${cycles} update cycles · ${analyses} analysis requests. Provider charges may include uncached Gamma samples; consult provider usage for billing.`;}
 function showSources(){const host=$('sources');host.replaceChildren();for(const s of sources){const card=node('div',undefined,'source');card.append(node('h3',s.title));const a=sourceLink(s.url);if(a)card.append(a);card.append(node('p','Session '+s.sessionDate+' · checked '+new Date(s.capturedAt).toLocaleString(),'muted'));const details=node('details');details.append(node('summary','Inspect returned data'));details.append(node('pre',JSON.stringify(s.data,null,2)));card.append(details);host.append(card);}}
 function chartViewer(source){const dialog=node('dialog',undefined,'chart-viewer'),close=node('button','Close chart'),img=node('img');img.src=source.image;img.alt=source.title;close.addEventListener('click',()=>dialog.close());dialog.append(close,node('h2',source.title),node('p','Captured '+new Date(source.capturedAt).toLocaleString()+' · assigned session '+source.sessionDate),img);if(source.captureNote)dialog.append(node('p',source.captureNote,'muted'));const link=sourceLink(source.url);if(link)dialog.append(link);dialog.addEventListener('close',()=>dialog.remove());document.body.append(dialog);dialog.showModal();}
@@ -38,14 +39,17 @@ async function captureConnected(){
  charts.push(...fresh);showCharts();$('connector-status').textContent=fresh.length+' charts captured at '+new Date().toLocaleTimeString();
 }
 async function updateData(){
+ await appConfig;
  await connectCharts(true);
  const date=$('session').value;message('Updating market data…');cycles++;usage();
  // Start a fresh source set: an unsuccessful provider is never silently reused.
  sources=[];lastUpdateWarnings=[];showSources();markOld();
- const results=await Promise.allSettled([provider('quantdata',date),provider('optionsdepth',date),provider('quantdata-context',date)]);let failure=[];
+ const results=await Promise.allSettled([provider('quantdata',date),provider('optionsdepth',date),provider('quantdata-context',date),...(databentoConfigured?[provider('databento',date,{symbol:$('es-contract').value.trim()||'ES.v.0'})]:[])]);let failure=[];
  if(results[2].status==='fulfilled'){sources.push(...results[2].value.sources);for(const item of results[2].value.sources){if(item.data.available===false)failure.push(item.title+': '+item.data.message);if(item.data.intervals?.available===false)failure.push(item.title+' intervals: '+item.data.intervals.message);}}
  const drift=results[0].status==='fulfilled'?results[0].value:null,slots=results[1].status==='fulfilled'?results[1].value:null;
  for(const r of results)if(r.status==='rejected')failure.push(r.reason.message);
+ const es=results[3]?.status==='fulfilled'?results[3].value:null;
+ if(databentoConfigured){if(es){sources.push({id:'databento',title:'Databento · '+es.contract+' price history',sessionDate:date,capturedAt:es.checkedAt,data:{...es,priceObservations:undefined}});$('es-feed-status').textContent=es.contract+' · '+es.freshness+' · '+es.latestPrice+' at '+marketTime(es.latestTimestamp);$('basis').value=es.basisResult?.ok?es.basisResult.basis:'';$('basis-result').textContent=es.basisResult?.ok?'ES minus SPX: '+es.basisResult.basis+' points · '+es.contract+' '+es.basisResult.esPrice+' minus SPX '+es.basisResult.spxPrice+' · '+marketTime(es.basisResult.esTime)+' (bar-close reference).':es.contract+' price connected. '+(es.basisResult?.message||'No matched SPX basis.');}else{$('es-feed-status').textContent='ES feed unavailable on this update. Prior scenario is not fresh.';sources.push({id:'databento',title:'Databento · ES price data',sessionDate:date,capturedAt:new Date().toISOString(),data:{ticker:'ES',available:false,message:results[3]?.reason?.message||'No ES response'}});$('basis').value='';}}
  if(drift){sources.push({id:'quantdata',title:'Quant Data · SPX Net Drift',sessionDate:date,capturedAt:drift.checkedAt,url:links.quantdata,data:{...drift,priceObservations:undefined}});$('price').textContent=drift.latestPrice?.toLocaleString()??'Unavailable';$('price-time').textContent='Data: '+(drift.latestTimestamp||'No timestamp');$('data-session').textContent=date;$('data-freshness').textContent=date===today()?'Compare the source time with the current time.':'Historical session · not current market data';}
  else{$('price').textContent='Unavailable';$('price-time').textContent='Latest update failed';}
  if(slots)sources.push({id:'timestamps',title:'OptionsDepth · Available model times',sessionDate:date,capturedAt:slots.checkedAt,url:links.gamma,data:{count:slots.count,earliest:slots.slots[0],latest:slots.slots.at(-1),note:'Availability only; not an exposure reading.'}});
@@ -110,7 +114,7 @@ $('export').addEventListener('click',()=>{if(!read)return;const url=URL.createOb
 window.addEventListener('pagehide',()=>{loop.stop();share?.stop();});
 refreshHistory(true);
 
-fetch('/api/config').then(r=>r.json()).then(c=>{$('configuration').textContent=c.analysisConfigured?'Analysis connected. Selected data and images are sent to OpenAI only when analysis is requested.':'Add OPENAI_API_KEY in Fly secrets to enable analysis. Data updates and local charts still work.';}).catch(()=>{$('configuration').textContent='Unable to check analysis connection.';});
+appConfig=fetch('/api/config').then(r=>r.json()).then(c=>{databentoConfigured=!!c.databentoConfigured;$('es-feed-status').textContent=databentoConfigured?'Databento configured · Update data checks ES prices.':'Databento not configured. ES screenshots remain available.';$('configuration').textContent=c.analysisConfigured?'Analysis connected. Selected data and images are sent to OpenAI only when analysis is requested.':'Add OPENAI_API_KEY in Fly secrets to enable analysis. Data updates and local charts still work.';}).catch(()=>{$('configuration').textContent='Unable to check analysis connection.';});
 
 async function connectCharts(silent=false){try{const result=await connectorRequest('status');if(!result?.ok)throw Error(result?.message||'Connector unavailable.');connectorEnabled=result.count>0;$('connector-status').textContent=connectorEnabled?result.count+' chart tabs connected. Update & analyze will capture them.':'Connector installed. Select chart tabs in its toolbar popup.';$('connect-charts').textContent=connectorEnabled?'Reconnect charts':'Connect charts';if(!silent)message($('connector-status').textContent);}catch(error){connectorEnabled=false;$('connector-status').textContent='One-time browser connector setup needed.';if(!silent)message(error.message+' Open the connector setup guide below.');}}
 $('connect-charts').addEventListener('click',()=>connectCharts());
@@ -124,7 +128,8 @@ $('toggle-es').addEventListener('click',()=>compactES(!$('es-drop').classList.co
 function chartContext(){return $('confirm-es').checked?{instrument:'ES',sessionDate:$('session').value,priceTime:$('es-price-time').value||null,timezone:'America/New_York'}:null;}
 function contextLabel(){$('confirm-es-label').textContent='This is my ES price chart for '+$('session').value;}
 function showPrice(selected=charts,selectedSources=sources,instrument=$('instrument').value){
- const es=selected.find(c=>c.id==='es-snapshot')?.observation,spx=selectedSources.find(s=>s.id==='quantdata')?.data;
+ const es=selected.find(c=>c.id==='es-snapshot')?.observation,spx=selectedSources.find(s=>s.id==='quantdata')?.data,feed=selectedSources.find(s=>s.id==='databento')?.data;
+ if(instrument==='ES'&&Number.isFinite(feed?.latestPrice)&&feed.available!==false){$('price-label').textContent='Databento · '+feed.contract;$('price').textContent=priceText(feed.latestPrice);$('price-time').textContent=feed.freshness+' · '+marketTime(feed.latestTimestamp)+' · '+feed.priceKind;return;}
  $('price-label').textContent=instrument==='ES'?'Chart price · ES':'API reference · SPX';
  if(instrument==='ES'){$('price').textContent=Number.isFinite(es?.price)&&es.instrument==='ES'?es.price.toLocaleString(undefined,{minimumFractionDigits:2}):'—';$('price-time').textContent=es?.instrument==='ES'?'Snapshot · '+(marketTime(es.timestamp)):'Read your pasted ES chart';}
  else{$('price').textContent=spx?.latestPrice?.toLocaleString()??'—';$('price-time').textContent=spx?.latestTimestamp?'SPX source: '+marketTime(spx.latestTimestamp):'No SPX reading';}
@@ -146,3 +151,5 @@ $('paste-es').addEventListener('click',()=>{compactES(false);$('paste-es').focus
 
 $('retry-basis').addEventListener('click',async()=>{if(busy)return;const chart=charts.find(c=>c.id==='es-snapshot');if(!chart){$('basis-result').textContent='Paste your ES screenshot in the box above first.';return;}try{await inspectES(chartImageBlob(chart.image),true);}catch(error){$('basis-result').textContent=error.message;}});
 loadESDraft($('session').value).then(draft=>{if(!draft||charts.some(c=>c.id==='es-snapshot')||draft.sessionDate!==$('session').value)return;charts.push({...draft,id:'es-snapshot'});$('es-preview').src=draft.image;$('es-preview').hidden=false;showCharts();$('confirm-es').checked=!!draft.confirmedContext;$('es-price-time').value=draft.confirmedContext?.priceTime||'';showPrice();$('basis-result').textContent=draft.observation?.instrument==='ES'?'Saved ES chart · '+draft.observation.price.toLocaleString(undefined,{minimumFractionDigits:2})+' at '+marketTime(draft.observation.timestamp)+'. Native ES analysis is available. Read again only to refresh the price/basis check.':'Saved ES screenshot restored for '+draft.sessionDate+'. Read the chart or analyze native ES levels.';}).catch(()=>{});
+
+$('es-contract').addEventListener('change',()=>{loop.stop();sources=sources.filter(s=>s.id!=='databento');$('basis').value='';markOld();showPrice();});

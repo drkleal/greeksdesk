@@ -1,7 +1,8 @@
 import http from 'node:http';
 import {createMarketContext} from './market-context.mjs';
+import {createDatabento} from './databento.mjs';
 import {validateChartContext} from './chart-context.mjs';
-import {readBasis,BasisReadError} from './basis.mjs';
+import {readBasis,BasisReadError,calculateBasis} from './basis.mjs';
 import {validDate} from './public/session.mjs';
 import { readFile } from 'node:fs/promises';
 import { timingSafeEqual } from 'node:crypto';
@@ -15,8 +16,16 @@ function matches(a, b) {
 }
 
 export function createServer(password = process.env.DESK_PASSWORD) {
-  const baseCheck = createProviderChecks(), marketContext = createMarketContext();
-  const checkProvider=(provider,date,selection)=>provider==='quantdata-context'?marketContext(date):baseCheck(provider,date,selection);
+  const baseCheck = createProviderChecks(), marketContext = createMarketContext(), esData=createDatabento();
+  const checkProvider=async(provider,date,selection)=>{
+    if(provider==='quantdata-context')return marketContext(date);
+    if(provider==='databento'){
+      const result=await esData(date,selection?.symbol||undefined);
+      if(result.ok){const spx=await baseCheck('quantdata',date);try{if(result.freshness==='stale')throw new BasisReadError('ES price is not fresh. No current basis applied.');result.basisResult=calculateBasis({instrument:'ES',price:result.latestPrice,timestamp:result.latestTimestamp,contract:result.contract},spx,date);}catch(error){result.basisResult={ok:false,message:error instanceof BasisReadError?error.message:'No matching SPX price.'};}}
+      return result;
+    }
+    return baseCheck(provider,date,selection);
+  };
   const analyze = createAnalyzer();
   return http.createServer(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -40,7 +49,7 @@ export function createServer(password = process.env.DESK_PASSWORD) {
     }
     if (req.url === '/api/config') {
       res.writeHead(200, {'Content-Type':'application/json'});
-      return res.end(JSON.stringify({analysisConfigured:!!process.env.OPENAI_API_KEY}));
+      return res.end(JSON.stringify({analysisConfigured:!!process.env.OPENAI_API_KEY,databentoConfigured:!!process.env.DATABENTO_API_KEY}));
     }
     if(req.url==='/api/basis'){
       if(req.method!=='POST'||req.headers['x-greeksdesk-action']!=='manual-check'||req.headers['sec-fetch-site']==='cross-site'){res.writeHead(403);return res.end();}
@@ -61,7 +70,7 @@ export function createServer(password = process.env.DESK_PASSWORD) {
       }
       try {
         const query = new URL(req.url, 'http://localhost').searchParams;
-        const result = await checkProvider(query.get('provider'), query.get('date'), {slot:query.get('slot'),min:Number(query.get('min')),max:Number(query.get('max'))});
+        const result = await checkProvider(query.get('provider'), query.get('date'), {symbol:query.get('symbol'),slot:query.get('slot'),min:Number(query.get('min')),max:Number(query.get('max'))});
         res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(result));
       } catch {
         res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ok:false,message:'Select a valid provider and session date.'}));

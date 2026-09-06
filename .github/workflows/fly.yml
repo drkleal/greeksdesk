@@ -18,10 +18,13 @@ jobs:
         with:
           node-version: '22'
       - name: Run checks
-        run: node --test
+        run: |
+          node --test
+          python3 -m unittest discover -s test -p test_databento_worker.py
       - name: Verify packaged app starts
         run: |
           docker build -t greeksdesk-smoke .
+          docker run --rm greeksdesk-smoke python3 -c "import databento; import databento_worker"
           docker run --rm -d --name greeksdesk-smoke -p 8080:8080 -e DESK_PASSWORD=smoke-only greeksdesk-smoke
           trap 'docker logs greeksdesk-smoke; docker stop greeksdesk-smoke' EXIT
           curl --fail --max-time 10 --retry 8 --retry-all-errors --retry-delay 2 http://127.0.0.1:8080/healthz

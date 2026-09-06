@@ -48,6 +48,14 @@ test('native ES mode never relabels SPX API references as ES',async()=>{
  assert.throws(()=>validateAnalysis({...valid,panels:[panel],levels:[level]},native));
  assert.throws(()=>validateAnalysis({...valid,panels:[nativePanel],levels:[{...level,panelIds:[]}]},native));
 });
+test('identified ES API bars support analysis without an image and cannot invent level prices',async()=>{
+ const input={date:'2026-09-04',instrument:'ES',basis:null,sources:[{id:'databento',title:'ESU6',sessionDate:'2026-09-04',data:{available:true,ticker:'ES',dataset:'GLBX.MDP3',contract:'ESU6',latestPrice:7715,recentBars:[{open:7715,high:7717,low:7714,close:7716}],session:{high:7717,low:7714,volume:2000}}}]};
+ const l={id:'es-low',price:7714,role:'structure',kind:'support',label:'Session low',sourceIds:['databento'],panelIds:[],evidence:'Session low from observed ESU6 bars',watch:'Retest',invalidation:'Loss'};
+ assert.doesNotThrow(()=>validateAnalysis({...structuredClone(valid),levels:[l]},input));
+ assert.throws(()=>validateAnalysis({...structuredClone(valid),levels:[{...l,price:2000}]},input));
+ let calls=0;const analyze=createAnalyzer({env:{OPENAI_API_KEY:'test-private'},request:async()=>{calls++;return {ok:true,json:async()=>({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify({...valid,levels:[l]})}]}]})};}});
+ assert.equal((await analyze(input)).ok,true);assert.equal(calls,1);
+});
 
 test('exposure measured in ES futures is not an ES price coordinate',()=>{
  const native={...packet,instrument:'ES',basis:null};
