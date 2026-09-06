@@ -62,6 +62,21 @@ test('identified ES API bars support analysis without an image and cannot invent
  let calls=0;const analyze=createAnalyzer({env:{OPENAI_API_KEY:'test-private'},request:async()=>{calls++;return {ok:true,json:async()=>({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify({...valid,levels:[l]})}]}]})};}});
  assert.equal((await analyze(input)).ok,true);assert.equal(calls,1);
 });
+test('off-map checkpoints require the same price, source and identity evidence as map levels',()=>{
+ const input={date:'2026-09-04',instrument:'ES',basis:null,sources:[{id:'databento',title:'ESU6',sessionDate:'2026-09-04',data:{available:true,ticker:'ES',dataset:'GLBX.MDP3',contract:'ESU6',recentBars:[{open:7716,high:7719.25,low:7715,close:7717.75}]}}]};
+ const checkpoint={id:'retest',price:7719.25,label:'Earlier rebound high',role:'structure',kind:'resistance',sourceIds:['databento'],panelIds:[],identity:{category:'structure',name:'Earlier rebound high',sourceLabel:null,description:'A rebound turned lower here.',derivation:'Recent ESU6 bar high followed by the supplied lower-price path.'},evidence:'Recent ES price reaction',watch:'Acceptance through the earlier high',invalidation:'A later break and sustained trade above'};
+ const check=(patch={})=>validateAnalysis({...structuredClone(valid),checkpoints:[{...structuredClone(checkpoint),...patch}]},input);
+ assert.equal(check().checkpoints[0].price,7719.25);
+ assert.throws(()=>check({price:7800}),/native ES/);
+ assert.throws(()=>check({sourceIds:['missing']}),/level evidence/);
+ assert.throws(()=>check({role:'model_reference'}),/checkpoint/);
+ assert.throws(()=>check({identity:{...checkpoint.identity,category:'drawing'}}),/checkpoint/);
+ assert.throws(()=>validateAnalysis({...structuredClone(valid),levels:[checkpoint],checkpoints:[checkpoint]},input),/level evidence/);
+ assert.throws(()=>validateAnalysis({...structuredClone(valid),checkpoints:[checkpoint],scenarios:valid.scenarios.map(s=>({...s,triggerId:'retest'}))},input),/scenario/);
+ // Image-backed checkpoints must use an observed, usable panel too.
+ const chart={...packet,instrument:'ES',basis:null};
+ assert.throws(()=>validateAnalysis({...structuredClone(valid),panels:[{...panel,instrument:'ES',status:'context'}],checkpoints:[{...checkpoint,sourceIds:['gamma'],panelIds:['p1']}]},chart),/native ES/);
+});
 
 test('exposure measured in ES futures is not an ES price coordinate',()=>{
  const native={...packet,instrument:'ES',basis:null};

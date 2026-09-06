@@ -17,6 +17,18 @@ test('a distant target cannot hide an intervening structural obstacle',()=>{
  const room=setupRoom({status:'conditional',direction:'up',triggerId:'start',targetId:'far'},levels);
  assert.equal(room.eligible,false);assert.equal(room.points,3.25);assert.match(room.text,/intervening structure/);
 });
+test('path checks include off-map reactions, both directions, and obstacles within one point',()=>{
+ const levels=[{id:'start',price:7716,role:'structure'},{id:'far',price:7722.75,role:'structure'}];
+ const checks=[{id:'near',price:7717.75,role:'structure'},{id:'nearer',price:7716.5,role:'structure'},{id:'other',price:7714,role:'structure'},{id:'quote',price:7716.25,role:'last_price'}];
+ const up={status:'conditional',direction:'up',triggerId:'start',targetId:'far'};
+ const room=setupRoom(up,levels,5,checks);
+ assert.equal(room.eligible,false);assert.equal(room.points,.5);assert.deepEqual(room.obstacles.map(l=>l.id),['nearer','near']);
+ assert.equal(levels.length,2); // Keeping the map uncluttered cannot increase apparent room.
+ const down=setupRoom({...up,direction:'down',triggerId:'far',targetId:'start'},levels,5,checks);
+ assert.equal(down.points,5);assert.equal(down.obstacles[0].id,'near');assert.equal(down.eligible,false);
+ assert.equal(setupRoom(up,levels,5,[]).eligible,true);
+ assert.equal(setupRoom(up,levels,5,null).eligible,false); // Archived read without this review.
+});
 
 test('explicit null and malformed exposure remain unknown, not documented zeros',()=>{
  const r=exposureSnapshot({data:{SPX:{stockPrice:7717,exposureMap:{expiry:{'7715':{callExposure:200,putExposure:null},'7720':{callExposure:'999'},'7000':{putExposure:-20}}}}}});

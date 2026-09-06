@@ -29,12 +29,14 @@ export function decisionZones(levels, tolerance=1){
  for(const l of sorted){const z=zones.at(-1);if(z&&z.high-l.price<=tolerance){z.low=l.price;z.members.push(l);}else zones.push({id:l.id,high:l.price,low:l.price,members:[l]});}
  return zones;
 }
-export function setupRoom(s,levels,minimum=5){
+export function setupRoom(s,levels,minimum=5,checkpoints=[]){
  const from=levels.find(l=>l.id===s.triggerId),to=levels.find(l=>l.id===s.targetId);
  if(s.status!=="conditional"||!from||!to)return {eligible:false,text:"Watch only · no verified destination"};
  if(from.role!=='structure'||to.role!=='structure'||(s.direction&&!pathDirectionValid(s,levels)))return {eligible:false,text:'Watch only · structural boundaries need verification'};
+ if(!Array.isArray(checkpoints))return {eligible:false,text:'Watch only · rebuild this read to check nearer obstacles'};
  const points=Math.abs(to.price-from.price);
- const first=levels.filter(l=>l.role==='structure'&&Math.abs(l.price-from.price)>1&&(to.price>from.price?l.price>from.price&&l.price<to.price:l.price<from.price&&l.price>to.price)).sort((a,b)=>Math.abs(a.price-from.price)-Math.abs(b.price-from.price))[0];
- if(first)return {eligible:false,points:Math.abs(first.price-from.price),text:'Watch only · '+priceText(Math.abs(first.price-from.price))+' points to intervening structure at '+priceText(first.price)+' before the proposed destination'};
+ const obstacles=[...levels,...checkpoints].filter(l=>l.role==='structure'&&(to.price>from.price?l.price>from.price&&l.price<to.price:l.price<from.price&&l.price>to.price)).sort((a,b)=>Math.abs(a.price-from.price)-Math.abs(b.price-from.price));
+ const first=obstacles[0];
+ if(first)return {eligible:false,obstacles,points:Math.abs(first.price-from.price),text:'Watch only · '+priceText(Math.abs(first.price-from.price))+' points to intervening structure at '+priceText(first.price)+' · farther path withheld'};
  return {eligible:points>=minimum,points,text:points<=1?"Watch only · nearby prices are one decision zone":points<minimum?"Watch only · "+priceText(points)+" points to the next reference; under the "+minimum+"-point planning minimum":priceText(points)+" points to the reference · risk/reward not yet established"};
 }

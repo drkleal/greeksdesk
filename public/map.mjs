@@ -33,7 +33,7 @@ export function renderMap(host,analysis,instrument,onSelect,onScenario=()=>{}){
   g.addEventListener('click',()=>onSelect(l));g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();onSelect(l);}});svg.append(g);
  }
  for(const s of analysis.scenarios){
-  if(s.status!=='conditional'||!pathDirectionValid(s,levels)||!setupRoom(s,levels).eligible||y(s.triggerId)===y(s.targetId))continue;
+  if(s.status!=='conditional'||!pathDirectionValid(s,levels)||!setupRoom(s,levels,5,analysis.checkpoints??null).eligible||y(s.triggerId)===y(s.targetId))continue;
   const lane=s.direction==='up'?245:s.direction==='down'?405:555,start=y(s.triggerId),end=s.targetId?y(s.targetId):start+(s.direction==='up'?-42:42),color=s.direction==='up'?'#36ffb1':s.direction==='down'?'#ff4f85':'#ffe85c';
   const g=svgNode('g',{role:'button',tabindex:0,'aria-label':directionTitle(s.direction)+' conditional path: '+s.condition});
   const path=`M ${lane} ${start} L ${lane+28} ${start+(end-start)*.28} L ${lane+28} ${end}`;

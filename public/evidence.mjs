@@ -43,6 +43,14 @@ export function renderEvidence(read,{panelButton,chartButton,onLevel}){
   button.addEventListener('click',()=>onLevel(l));guide.append(button);
  }
  if(!a.levels.length)guide.append(node('p','No verified levels in this read. The Evidence tab explains the gaps.'));
+ if(a.checkpoints?.length){
+  guide.append(node('h3','Additional price checkpoints'),node('p','These reactions also count when checking the path to a destination. Click for their exact source.','muted'));
+  for(const l of [...a.checkpoints].sort((x,y)=>y.price-x.price)){
+   const d=levelDetails(l,a),button=node('button',undefined,'level-key checkpoint-link');button.dataset.levelId=l.id;button.style.setProperty('--level-color','#ffe85c');
+   button.append(node('span',priceText(l.price)+' '+read.instrument,'key-price'),node('strong',d.name),node('small',d.badge),node('span',d.description));
+   button.addEventListener('click',()=>onLevel(l));guide.append(button);
+  }
+ }
 }
 export function showEvidenceTab(name){for(const id of ['evidence','levels']){document.getElementById('tab-'+id).setAttribute('aria-selected',String(id===name));document.getElementById(id==='evidence'?'panel-review':'level-guide').hidden=id!==name;}}
 export function focusEvidence(id){showEvidenceTab('evidence');const card=[...document.querySelectorAll('[data-evidence-id]')].find(e=>e.dataset.evidenceId===id);if(card){card.open=true;card.scrollIntoView({behavior:'smooth',block:'nearest'});}}
