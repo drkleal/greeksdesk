@@ -217,7 +217,7 @@ export function referenceRead(packet){
  }
  return {panels:[],headline:'Source references ready · original chart needed for scenarios',summary:`These are observations for ${packet.date}, not confirmed trading triggers. Signed premium totals do not establish direction. ${packet.instrument==='ES'&&packet.basis===null?'No matched basis: SPX references are context only.':packet.instrument==='ES'?'Prices use the user-supplied ES minus SPX basis of '+packet.basis+'.':''}`,gaps:['Attach or share the matching-session price/chart evidence to develop conditional scenarios.','Gamma model values alone do not establish support or resistance.'],changes:[],levels:levels.slice(0,6),sources:descriptions,scenarios:['up','down','neutral'].map(direction=>({direction,status:'insufficient',triggerId:null,targetId:null,condition:'The available API summaries do not establish this scenario.',confirmation:'Add a matching-session chart showing price structure and response.',invalidation:'No trading trigger has been established.'}))};
 }
-export function createAnalyzer({env=process.env,request=fetch}={}){
+export function createAnalyzer({env=process.env,request=fetch,onValidationFailure=async()=>{}}={}){
  let pending=false,last=null;
  return async input=>{
   const packet=validatePacket(input);
@@ -226,7 +226,7 @@ export function createAnalyzer({env=process.env,request=fetch}={}){
   const hash=createHash('sha256').update(JSON.stringify(packet)).digest('hex');
   if(last?.hash===hash&&Date.now()-last.time<60000)return {...last.result,cached:true};
   if(pending)return {ok:false,message:'An analysis is already running. Wait for it to finish.'};
-  pending=true;let stage='request';const started=Date.now();
+  pending=true;let stage='request',validationSnapshot,usage=null;const started=Date.now();
   try{
    const content=[{type:'input_text',text:JSON.stringify({...packet,analysisTimeUTC:new Date().toISOString(),sources:packet.sources.map(({image,...s})=>({...s,hasImage:!!image}))})}];
    for(const s of packet.sources)if(s.image)content.push({type:'input_text',text:'Chart image for source '+s.id},{type:'input_image',image_url:s.image,detail:'high'});
@@ -271,13 +271,16 @@ Return compact JSON with concise prose. For more than 24 sources: retain every s
    const body=await r.json();stage='decode';
    if(body.status!=='completed')return {ok:false,code:body.incomplete_details?.reason==='max_output_tokens'?'analysis_limit':'analysis_incomplete',durationSeconds:Math.round((Date.now()-started)/1000),usage:body.usage?{inputTokens:body.usage.input_tokens,outputTokens:body.usage.output_tokens}:null,message:body.incomplete_details?.reason==='max_output_tokens'?'Analysis reached its response limit. No partial scenario was applied.':'Analysis did not complete. No partial scenario was applied.'};
    const text=body.output?.flatMap(item=>item.content||[]).filter(item=>item.type==='output_text').map(item=>item.text).join('');
-   const decoded=JSON.parse(text);stage='validation';const analysis=validateAnalysis(decoded,packet);
+   const decoded=JSON.parse(text);stage='validation';validationSnapshot=structuredClone(decoded);usage=body.usage?{inputTokens:body.usage.input_tokens,outputTokens:body.usage.output_tokens}:null;const analysis=validateAnalysis(decoded,packet);
    const result={ok:true,analysis,checkedAt:new Date().toISOString(),durationSeconds:Math.round((Date.now()-started)/1000),model:env.OPENAI_MODEL||'gpt-5.4',usage:body.usage?{inputTokens:body.usage.input_tokens,outputTokens:body.usage.output_tokens}:null};
    last={hash,time:Date.now(),result};return result;
   }catch(error){
    const elapsed=Math.round((Date.now()-started)/1000),suffix=' Previous plan retained; no automatic retry.';
    if(error?.name==='TimeoutError'||error?.name==='AbortError')return {ok:false,code:'analysis_timeout',durationSeconds:elapsed,message:'Analysis timed out after '+elapsed+' seconds.'+suffix};
    if(stage==='validation'){
+    // Keep the rejected model output separate from the applied plan so a
+    // failed citation can be inspected without buying the same response again.
+    try{await onValidationFailure({packetHash:hash,checkedAt:new Date().toISOString(),date:packet.date,instrument:packet.instrument,validationError:error.message,analysis:validationSnapshot,usage});}catch{}
     const known=new Map([
      ['The cited ES price does not match its dated source bar.','A generated ES level did not match its cited date, price or bar.'],
      ['ES-only mode requires native ES panel evidence.','A generated ES level lacked matching ES price evidence.'],
@@ -286,7 +289,8 @@ Return compact JSON with concise prose. For more than 24 sources: retain every s
      ['Invalid level panel.','A generated level cited an unavailable chart panel.'],
      ['Chart level needs a matching usable panel.','A generated chart level lacked a matching usable panel.']
     ]);
-    return {ok:false,code:known.has(error?.message)?'evidence_mismatch':'analysis_validation',durationSeconds:elapsed,message:(known.get(error?.message)||'The analysis failed the source and scenario checks.')+suffix};
+    const result={ok:false,code:known.has(error?.message)?'evidence_mismatch':'analysis_validation',durationSeconds:elapsed,usage,message:(known.get(error?.message)||'The analysis failed the source and scenario checks.')+suffix};
+    last={hash,time:Date.now(),result};return result;
    }
    return {ok:false,code:stage==='decode'?'analysis_format':'analysis_connection',durationSeconds:elapsed,message:(stage==='decode'?'The analysis response was incomplete or unreadable.':'The analysis connection failed before a complete response arrived.')+suffix};
   }finally{pending=false;}

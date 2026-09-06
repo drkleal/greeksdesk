@@ -28,6 +28,16 @@ test('no key, refusal or truncated analysis never applies a partial map',async()
  assert.equal((await createAnalyzer({env:{}})(packet)).ok,false);
  for(const body of [{status:'incomplete'}, {status:'completed',output:[{content:[{type:'refusal',refusal:'No'}]}]}]){const analyze=createAnalyzer({env:{OPENAI_API_KEY:'secret'},request:async()=>({ok:true,json:async()=>body})});const r=await analyze(packet);assert.equal(r.ok,false);assert.ok(!JSON.stringify(r).includes('secret'));}
 });
+test('rejected output is recoverable privately, never applied, and exact immediate retries do not rebill',async()=>{
+ const rejected=structuredClone(valid);rejected.scenarios[0].triggerId='invented';
+ let calls=0,saved;
+ const analyze=createAnalyzer({env:{OPENAI_API_KEY:'private-key'},onValidationFailure:async review=>{saved=review;},request:async()=>{calls++;return {ok:true,json:async()=>({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify(rejected)}]}],usage:{input_tokens:20,output_tokens:30,unused:'omit'}})};}});
+ const result=await analyze(packet);
+ assert.equal(result.ok,false);assert.equal(result.analysis,undefined);assert.equal(result.validationError,undefined);
+ assert.deepEqual(saved.analysis,rejected);assert.match(saved.packetHash,/^[a-f0-9]{64}$/);assert.equal(saved.validationError,'Invalid scenario.');
+ assert.deepEqual(saved.usage,{inputTokens:20,outputTokens:30});assert.equal(saved.sources,undefined);assert.ok(!JSON.stringify(saved).includes('private-key'));
+ const repeat=await analyze(packet);assert.equal(repeat.cached,true);assert.equal(repeat.ok,false);assert.equal(calls,1);
+});
 test('large source inventories have room for the complete review and retain failed usage without retrying',async()=>{
  let calls=0;
  const input={...packet,sources:Array.from({length:50},(_,i)=>({...packet.sources[0],id:'source-'+i,...(i?{image:undefined}:{})}))};

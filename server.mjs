@@ -6,7 +6,7 @@ import {createDatabento} from './databento.mjs';
 import {validateChartContext} from './chart-context.mjs';
 import {readBasis,BasisReadError,calculateBasis,cashBasisReference} from './basis.mjs';
 import {validDate} from './public/session.mjs';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createProviderChecks } from './providers.mjs';
@@ -31,7 +31,7 @@ export function createServer(password = process.env.DESK_PASSWORD) {
     }
     return baseCheck(provider,date,selection);
   };
-  const analyze = createAnalyzer();
+  const analyze = createAnalyzer({onValidationFailure:review=>writeFile('/tmp/greeksdesk-analysis-review.json',JSON.stringify(review),{mode:0o600})});
   return http.createServer(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
