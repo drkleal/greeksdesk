@@ -3,7 +3,7 @@ import {levelDetails,priceText,levelColors,directionTitle,decisionZones} from '.
 export function evidenceCoverage(read){
  const a=read.result.analysis,items=[];
  for(const source of read.sources){
-  if(source.data){const insight=a.sources.find(s=>s.id===source.id);items.push({id:source.id,source,insight,title:source.title,status:source.data.available===false?'unavailable':insight?'reviewed':'not-reviewed'});}
+  if(source.data){const insight=a.sources.find(s=>s.id===source.id),partial=source.data.incompleteLegPairs>0||source.data.intervals?.buckets?.some(b=>b.incomplete>0);items.push({id:source.id,source,insight,title:source.title,status:source.data.available===false?'unavailable':insight?(partial?'partial':'reviewed'):'not-reviewed'});}
   if(source.image){
    const panels=(a.panels||[]).filter(p=>p.sourceId===source.id);
    for(const p of panels)items.push({id:p.id,source,panel:p,title:p.title,status:p.status==='excluded'?'excluded':p.dateRole==='projected_session'?'forward-model':p.status==='context'?'context':'reviewed'});
@@ -15,12 +15,13 @@ export function evidenceCoverage(read){
 }
 export function renderEvidence(read,{panelButton,chartButton,onLevel}){
  const a=read.result.analysis,host=document.getElementById('panel-review'),guide=document.getElementById('level-guide');host.replaceChildren();guide.replaceChildren();
- const coverage=evidenceCoverage(read),reviewed=coverage.filter(i=>['reviewed','context','forward-model'].includes(i.status)).length;
+ const coverage=evidenceCoverage(read),reviewed=coverage.filter(i=>['reviewed','partial','context','forward-model'].includes(i.status)).length;
  document.getElementById('coverage-summary').textContent=reviewed+' of '+coverage.length+' supplied panels / API feeds reviewed · '+new Date(read.result.checkedAt).toLocaleTimeString();
  for(const item of coverage){
   const card=node('details',undefined,'evidence-card '+item.status);card.dataset.evidenceId=item.id;
-  const top=node('summary'),label=node('span',item.title),badge=node('small',({'not-reviewed':'Not reviewed','forward-model':'Next-session model',reviewed:'Reviewed',context:'Context',excluded:'Excluded',unavailable:'Unavailable'})[item.status],'evidence-badge');top.append(label,badge);card.append(top);
+  const top=node('summary'),label=node('span',item.title),badge=node('small',({'not-reviewed':'Not reviewed','forward-model':'Next-session model',partial:'Partial data',reviewed:'Reviewed',context:'Context',excluded:'Excluded',unavailable:'Unavailable'})[item.status],'evidence-badge');top.append(label,badge);card.append(top);
   const p=item.panel,s=item.insight;
+  if(item.status==='partial')card.append(node('p','Some exposure legs are missing. Rankings cover complete strikes only; this feed does not establish the full-market exposure profile.','warn'));
   top.append(node('span',p?.shows||s?.shows||item.source.data?.message||'Supplied without a returned finding. Not counted as support.','evidence-observation'));
   card.append(node('p',(p?p.instrument+' · '+p.observedDate:item.source.data?.ticker+' · '+item.source.sessionDate),'muted'));
   if(p?.reason||s?.importance)card.append(node('h3','Why it matters'),node('p',p?.reason||s.importance));

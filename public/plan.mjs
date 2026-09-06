@@ -1,4 +1,10 @@
 export const priceText=p=>Number(p).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+export function quoteStatus(feed, now=Date.now()){
+ if(feed.freshness==='historical')return 'Historical';
+ const age=(now-Date.parse(feed.latestTimestamp))/1000;
+ if(!Number.isFinite(age)||age<0)return 'Observation time unverified';
+ return feed.freshness==='fresh'&&age<=20?'Fresh sample · '+Math.floor(age)+'s old':'Stale sample · '+(age<60?Math.floor(age)+'s':Math.floor(age/60)+'m')+' old';
+}
 export function levelDetails(level,analysis={}){
  const panels=(analysis.panels||[]).filter(p=>level.panelIds?.includes(p.id));
  const source=panels.map(p=>p.title).join(' · ')||'API source';
@@ -23,9 +29,9 @@ export function decisionZones(levels, tolerance=1){
  for(const l of sorted){const z=zones.at(-1);if(z&&z.high-l.price<=tolerance){z.low=l.price;z.members.push(l);}else zones.push({id:l.id,high:l.price,low:l.price,members:[l]});}
  return zones;
 }
-export function setupRoom(s,levels){
+export function setupRoom(s,levels,minimum=5){
  const from=levels.find(l=>l.id===s.triggerId),to=levels.find(l=>l.id===s.targetId);
  if(s.status!=="conditional"||!from||!to)return {eligible:false,text:"Watch only · no verified destination"};
  const points=Math.abs(to.price-from.price);
- return {eligible:points>1,points,text:points<=1?"Watch only · nearby prices are one decision zone":priceText(points)+" points to the reference · risk/reward not yet established"};
+ return {eligible:points>=minimum,points,text:points<=1?"Watch only · nearby prices are one decision zone":points<minimum?"Watch only · "+priceText(points)+" points to the next reference; under the "+minimum+"-point planning minimum":priceText(points)+" points to the reference · risk/reward not yet established"};
 }

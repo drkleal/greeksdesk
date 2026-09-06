@@ -32,7 +32,9 @@ Server verification on September 6 returned 1,379 ESU6 minute bars for September
 
 ## Plan provenance
 
-Level identities distinguish provider-named levels, observed price structure, unidentified drawings, and last quotes. The clean map uses matching Z1/Z2 decision-zone identifiers with the level key. Structural prices within one point form one zone. Unknown drawings and last quotes cannot establish structural scenario boundaries. Paths without a verified destination, or spanning no more than one point, are watch-only. This grouping is a readability rule, not a volatility or profitability claim. Arrow target prices must agree with their direction. Spacing is schematic and explicitly labelled.
+Level identities distinguish provider-named levels, observed price structure, unidentified drawings, and last quotes. The clean map uses matching Z1/Z2 decision-zone identifiers with the level key. Structural prices within one point form one zone. Unknown drawings and last quotes cannot establish structural scenario boundaries. Paths without a verified destination, or with less than five points of room to the nearest destination, are watch-only. Five points is a stated planning display minimum in response to the request to avoid tiny trade paths, not a claim that five points makes a trade worthwhile. References are retained even when their paths are withheld. Arrow target prices must agree with their direction. Spacing is schematic and explicitly labelled.
+
+Partial exposure feeds have a visible Partial data badge. Their findings remain reviewable; the badge never implies complete market coverage. A fresh price sample ages into Stale sample after twenty seconds in the browser, without triggering another request.
 
 Scenario drivers link to source findings, including opposing evidence. Unavailable feeds and excluded panels cannot be marked as support; next-session models remain context. Earlier API observations are supplied for comparisons only within the same selected session and instrument; the analyst must also match filters, units and observation times. Repeated snapshots are not new market movement.
 

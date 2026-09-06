@@ -3,7 +3,7 @@ import {createUpdateLoop} from './update-loop.mjs';
 import {startChartShare,resizeChart,listReads,saveRead,loadESDraft,saveESDraft,chartImageBlob} from './capture.mjs';
 import {node,renderMap,sourceLink} from './map.mjs';
 import {renderEvidence,showEvidenceTab,focusEvidence} from './evidence.mjs';
-import {levelDetails,priceText,directionTitle,setupRoom} from './plan.mjs';
+import {levelDetails,priceText,directionTitle,setupRoom,quoteStatus} from './plan.mjs';
 import {today,initialSession,validDate} from './session.mjs';
 const $=id=>document.getElementById(id);
 let savedSession;try{savedSession=JSON.parse(localStorage.getItem('greeksdesk-session'));}catch{}
@@ -13,6 +13,7 @@ function rememberSession(){try{localStorage.setItem('greeksdesk-session',JSON.st
 rememberSession();
 let connectorEnabled=false,databentoConfigured=false;
 let appConfig;
+let displayedESFeed=null;
 let sources=[],charts=[],read=null,share=null,busy=false,revision=0,cycles=0,analyses=0,manualMode=null,lastUpdateWarnings=[];
 const links={quantdata:'https://v3.quantdata.us/page/custom/4e4699d7-e026-4cd8-9f43-24c832d25857',gamma:'https://app.optionsdepth.com/dashboard?tab=table'};
 const message=t=>$('status').textContent=t;
@@ -128,12 +129,16 @@ $('toggle-es').addEventListener('click',()=>compactES(!$('es-drop').classList.co
 function chartContext(){return $('confirm-es').checked?{instrument:'ES',sessionDate:$('session').value,priceTime:$('es-price-time').value||null,timezone:'America/New_York'}:null;}
 function contextLabel(){$('confirm-es-label').textContent='This is my ES price chart for '+$('session').value;}
 function showPrice(selected=charts,selectedSources=sources,instrument=$('instrument').value){
+ displayedESFeed=null;
  const es=selected.find(c=>c.id==='es-snapshot')?.observation,spx=selectedSources.find(s=>s.id==='quantdata')?.data,feed=selectedSources.find(s=>s.id==='databento')?.data;
- if(instrument==='ES'&&Number.isFinite(feed?.latestPrice)&&feed.available!==false){$('price-label').textContent='Databento · '+feed.contract;$('price').textContent=priceText(feed.latestPrice);$('price-time').textContent=feed.freshness+' · '+marketTime(feed.latestTimestamp)+' · '+feed.priceKind;return;}
+ if(instrument==='ES'&&Number.isFinite(feed?.latestPrice)&&feed.available!==false){displayedESFeed=feed;$('price-label').textContent='Databento · '+feed.contract;$('price').textContent=priceText(feed.latestPrice);showESAge();return;}
  $('price-label').textContent=instrument==='ES'?'Chart price · ES':'API reference · SPX';
  if(instrument==='ES'){$('price').textContent=Number.isFinite(es?.price)&&es.instrument==='ES'?es.price.toLocaleString(undefined,{minimumFractionDigits:2}):'—';$('price-time').textContent=es?.instrument==='ES'?'Snapshot · '+(marketTime(es.timestamp)):'Read your pasted ES chart';}
  else{$('price').textContent=spx?.latestPrice?.toLocaleString()??'—';$('price-time').textContent=spx?.latestTimestamp?'SPX source: '+marketTime(spx.latestTimestamp):'No SPX reading';}
 }
+function showESAge(){if(displayedESFeed)$('price-time').textContent=quoteStatus(displayedESFeed)+' · '+marketTime(displayedESFeed.latestTimestamp)+' · '+displayedESFeed.priceKind;}
+// Display-only clock: no market-data request or analysis is triggered here.
+setInterval(showESAge,1000);
 contextLabel();
 for(const id of ['confirm-es','es-price-time'])$(id).addEventListener('change',()=>{
  if(busy)return;const chart=charts.find(c=>c.id==='es-snapshot');$('basis').value='';basisProposal=null;

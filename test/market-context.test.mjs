@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {exposureSnapshot,intervalPath,darkPoolLevels,createMarketContext} from '../market-context.mjs';
 import {evidenceCoverage} from '../public/evidence.mjs';
-import {pathDirectionValid,levelDetails,decisionZones,setupRoom} from '../public/plan.mjs';
+import {pathDirectionValid,levelDetails,decisionZones,setupRoom,quoteStatus} from '../public/plan.mjs';
 test('exposure ranks complete strikes without treating absent legs as zero',()=>{
  const r=exposureSnapshot({data:{SPX:{stockPrice:7717,exposureMap:{'2026-09-04':{'7715':{callExposure:200,putExposure:-50},'7720':{callExposure:999}},'2026-09-11':{'7715':{callExposure:80,putExposure:-10}}}}}});
  assert.equal(r.strongest.length,1);assert.equal(r.strongest[0].net,220);assert.equal(r.incompleteLegPairs,1);assert.equal(r.strikeCount,2);
@@ -25,6 +25,16 @@ test('coverage exposes captured panels omitted from the analysis and unavailable
  const read={sources:[{id:'chart',image:'image',capturedPanels:[{id:'panel-1',title:'Gamma'},{id:'panel-2',title:'Charm'}]},{id:'api',title:'API',data:{available:false}}],result:{analysis:{sources:[{id:'api'}],panels:[{id:'p',sourceId:'chart',capturedPanelId:'panel-1',title:'Gamma',status:'context'}]}}};
  assert.deepEqual(evidenceCoverage(read).map(r=>r.status),['context','not-reviewed','unavailable']);
 });
+test('reviewed incomplete exposure remains visibly partial',()=>{
+ const read={sources:[{id:'gamma',data:{available:true,incompleteLegPairs:3}},{id:'delta',data:{available:true,intervals:{buckets:[{incomplete:1}]}}}],result:{analysis:{sources:[{id:'gamma'},{id:'delta'}]}}};
+ assert.deepEqual(evidenceCoverage(read).map(r=>r.status),['partial','partial']);
+});
+test('a displayed fresh quote ages into stale without fetching new data',()=>{
+ const feed={freshness:'fresh',latestTimestamp:'2026-09-08T14:00:00Z'};
+ assert.equal(quoteStatus(feed,Date.parse('2026-09-08T14:00:10Z')),'Fresh sample · 10s old');
+ assert.equal(quoteStatus(feed,Date.parse('2026-09-08T14:00:21Z')),'Stale sample · 21s old');
+ assert.equal(quoteStatus({...feed,freshness:'historical'},Date.parse('2026-09-09T14:00:00Z')),'Historical');
+});
 test('path direction cannot reverse prices or use a last-price marker as a target',()=>{
  const levels=[{id:'a',price:100,role:'structure'},{id:'b',price:110,role:'structure'},{id:'last',price:90,role:'last_price'}];
  assert.equal(pathDirectionValid({direction:'up',triggerId:'a',targetId:'b'},levels),true);
@@ -41,4 +51,5 @@ test('nearby prices form one decision zone and missing or half-point destination
  assert.equal(setupRoom({status:'conditional',triggerId:'a',targetId:'b'},levels).eligible,false);
  assert.equal(setupRoom({status:'conditional',triggerId:'a',targetId:null},levels).eligible,false);
  assert.equal(setupRoom({status:'conditional',triggerId:'b',targetId:'c'},levels).points,6.75);
+ assert.equal(setupRoom({status:'conditional',triggerId:'a',targetId:'low'},[...levels,{id:'low',price:7713.75,role:'structure'}]).eligible,false);
 });
