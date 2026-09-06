@@ -1,4 +1,5 @@
 import http from 'node:http';
+import {createMarketContext} from './market-context.mjs';
 import {validateChartContext} from './chart-context.mjs';
 import {readBasis,BasisReadError} from './basis.mjs';
 import {validDate} from './public/session.mjs';
@@ -14,7 +15,8 @@ function matches(a, b) {
 }
 
 export function createServer(password = process.env.DESK_PASSWORD) {
-  const checkProvider = createProviderChecks();
+  const baseCheck = createProviderChecks(), marketContext = createMarketContext();
+  const checkProvider=(provider,date,selection)=>provider==='quantdata-context'?marketContext(date):baseCheck(provider,date,selection);
   const analyze = createAnalyzer();
   return http.createServer(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -69,7 +71,7 @@ export function createServer(password = process.env.DESK_PASSWORD) {
       res.writeHead(405, { Allow: 'GET, HEAD' });
       return res.end();
     }
-    const scripts = {'/session.mjs':'./public/session.mjs','/connector.mjs':'./public/connector.mjs','/desk.mjs':'./public/desk.mjs','/desk.css':'./public/desk.css','/map.mjs':'./public/map.mjs','/capture.mjs':'./public/capture.mjs','/exposure.js':'./public/exposure.js','/connections.mjs':'./public/connections.mjs','/update-loop.mjs':'./public/update-loop.mjs'};
+    const scripts = {'/plan.mjs':'./public/plan.mjs','/evidence.mjs':'./public/evidence.mjs','/session.mjs':'./public/session.mjs','/connector.mjs':'./public/connector.mjs','/desk.mjs':'./public/desk.mjs','/desk.css':'./public/desk.css','/map.mjs':'./public/map.mjs','/capture.mjs':'./public/capture.mjs','/exposure.js':'./public/exposure.js','/connections.mjs':'./public/connections.mjs','/update-loop.mjs':'./public/update-loop.mjs'};
     if (!['/', '/index.html', '/preview', '/connections', '/connector', '/chart-connector.zip', ...Object.keys(scripts)].includes(req.url)) {
       res.writeHead(404);
       return res.end('Not found');

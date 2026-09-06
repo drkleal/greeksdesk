@@ -17,15 +17,15 @@ function capturedPanelList(items){
 export const analysisSchema=obj({
  headline:str, summary:str, gaps:arr(str), changes:arr(str),
  panels:arr(obj({id:str,sourceId:str,capturedPanelId:{type:['string','null']},title:str,instrument:{type:'string',enum:instruments},instrumentEvidence:{type:'string',enum:instrumentEvidence},instrumentLabel:str,metricUnits:str,observedDate:str,dateEvidence:{type:'string',enum:['visible','user_confirmed','unknown']},dateRole:{type:'string',enum:dateRoles},status:{type:"string",enum:["usable","context","excluded"]},reason:str,shows:str,region:obj({x:{type:"number"},y:{type:"number"},width:{type:"number"},height:{type:"number"}})})),
- levels:arr(obj({id:str,price:{type:'number'},label:str,role:{type:'string',enum:['structure','last_price','model_reference']},kind:{type:'string',enum:['support','resistance','gamma','reference','other']},sourceIds:arr(str),panelIds:arr(str),evidence:str,watch:str,invalidation:str})),
- scenarios:arr(obj({direction:{type:'string',enum:['up','down','neutral']},status:{type:'string',enum:['conditional','insufficient']},triggerId:{type:['string','null']},targetId:{type:['string','null']},condition:str,confirmation:str,invalidation:str})),
- sources:arr(obj({id:str,shows:str,importance:str,lookFor:str}))
+ levels:arr(obj({id:str,price:{type:'number'},label:str,role:{type:'string',enum:['structure','last_price','model_reference']},kind:{type:'string',enum:['support','resistance','gamma','delta','vanna','charm','dark_pool','reference','other']},identity:obj({category:{type:'string',enum:['provider','structure','drawing','quote']},name:str,sourceLabel:{type:['string','null']},description:str,derivation:str}),sourceIds:arr(str),panelIds:arr(str),evidence:str,watch:str,invalidation:str})),
+ scenarios:arr(obj({direction:{type:'string',enum:['up','down','neutral']},status:{type:'string',enum:['conditional','insufficient']},triggerId:{type:['string','null']},targetId:{type:['string','null']},condition:str,confirmation:str,invalidation:str,rationale:str,drivers:arr(obj({sourceId:str,panelId:{type:['string','null']},effect:{type:'string',enum:['supports','opposes','context','unavailable']},reason:str}))})),
+ sources:arr(obj({id:str,shows:str,importance:str,lookFor:str,change:str,priceEffect:str}))
 });
 export function validatePacket(input){
  if(!input||!/^\d{4}-\d{2}-\d{2}$/.test(input.date)||!Number.isFinite(Date.parse(input.date))||new Date(input.date).toISOString().slice(0,10)!==input.date)throw Error('Choose a valid date.');
  if(!['SPX','ES'].includes(input.instrument))throw Error('Select SPX or ES.');
  if(input.instrument==='ES'&&input.basis!==null&&(!Number.isFinite(input.basis)||Math.abs(input.basis)>200))throw Error('Enter a current ES minus SPX basis.');
- if(!Array.isArray(input.sources)||input.sources.length>8)throw Error('Too many sources.');
+ if(!Array.isArray(input.sources)||input.sources.length>16)throw Error('Too many sources.');
  const ids=new Set();
  const sources=input.sources.map(s=>{
   if(!s||typeof s.id!=='string'||!/^[a-z0-9-]{1,40}$/.test(s.id)||ids.has(s.id))throw Error('Invalid source.');ids.add(s.id);
@@ -41,7 +41,12 @@ export function validatePacket(input){
   return {id:s.id,title:s.title,sessionDate:s.sessionDate,capturedAt:typeof s.capturedAt==='string'?s.capturedAt:null,data,...(image?{image}:{}),...(confirmedContext?{confirmedContext}:{}),...(capturedPanels?{capturedPanels}:{})};
  });
  if(!sources.length)throw Error('Update data or attach a chart first.');
- return {date:input.date,instrument:input.instrument,basis:input.instrument==='ES'?input.basis:0,sources,previous:typeof input.previous==='string'?input.previous.slice(0,4000):''};
+ return {date:input.date,instrument:input.instrument,basis:input.instrument==='ES'?input.basis:0,sources,previous:typeof input.previous==='string'?input.previous.slice(0,4000):'',previousEvidence:normalizePrevious(input.previousEvidence,input.date)};
+}
+function normalizePrevious(previous,date){
+ if(!previous)return null;
+ if(previous.date!==date||typeof previous.checkedAt!=='string'||!Array.isArray(previous.sources)||JSON.stringify(previous).length>100000)throw Error('Invalid prior evidence');
+ return {date,checkedAt:previous.checkedAt,sources:previous.sources.map(s=>({id:String(s.id).slice(0,40),data:s.data??null}))};
 }
 export function validateAnalysis(value,packet){
  if(!value||typeof value.headline!=='string'||typeof value.summary!=='string'||!Array.isArray(value.levels)||value.levels.length>6||!Array.isArray(value.scenarios)||value.scenarios.length!==3||!Array.isArray(value.sources)||!['gaps','changes'].every(k=>Array.isArray(value[k])&&value[k].every(v=>typeof v==='string')))throw Error('Invalid analysis format.');
@@ -72,18 +77,39 @@ export function validateAnalysis(value,packet){
  }
  for(const l of value.levels){if(!['structure','last_price','model_reference'].includes(l.role))throw Error('Missing level role.');if(typeof l.id!=='string'||ids.has(l.id)||!Number.isFinite(l.price)||l.price<=0||!Array.isArray(l.sourceIds)||!l.sourceIds.length||l.sourceIds.some(id=>!sources.has(id))||!['label','evidence','watch','invalidation'].every(k=>typeof l[k]==='string'))throw Error('Invalid level evidence.');ids.add(l.id);if(packet.instrument==='ES'&&packet.basis===null&&!l.panelIds?.some(id=>panels.some(p=>p.id===id&&p.instrument==='ES'&&p.status==='usable')))throw Error('ES-only mode requires native ES panel evidence.');if(l.panelIds!==undefined&&(!Array.isArray(l.panelIds)||l.panelIds.some(id=>!panels.some(p=>p.id===id&&p.status==='usable'&&l.sourceIds.includes(p.sourceId)))))throw Error('Invalid level panel.');if(l.sourceIds.some(id=>packet.sources.find(s=>s.id===id)?.image)&&!l.panelIds?.length)throw Error('Chart level needs a matching usable panel.');}
 
+
+ for(const l of value.levels){
+  if(!l.identity)continue; // Saved reads from older versions remain reviewable.
+  const d=l.identity;
+  if(!['provider','structure','drawing','quote'].includes(d.category)||!['name','description','derivation'].every(k=>typeof d[k]==='string'&&d[k].trim())||(d.sourceLabel!==null&&typeof d.sourceLabel!=='string'))throw Error('Invalid level identity');
+  if(d.category==='provider'&&!d.sourceLabel?.trim())throw Error('Named provider level requires its source label');
+  if(d.category==='drawing')l.role='model_reference';
+  if(d.category==='quote')l.role='last_price';
+ }
+ for(const scenario of value.scenarios){
+  if(!scenario.drivers)continue;
+  if(!Array.isArray(scenario.drivers)||scenario.drivers.length>6)throw Error('Invalid scenario drivers');
+  for(const d of scenario.drivers){
+   const source=packet.sources.find(s=>s.id===d.sourceId),panel=d.panelId===null?null:panels.find(p=>p.id===d.panelId&&p.sourceId===d.sourceId);
+   if(!source||(d.panelId!==null&&!panel)||typeof d.reason!=='string'||!['supports','opposes','context','unavailable'].includes(d.effect))throw Error('Invalid driver evidence');
+   if(source.data?.available===false||panel?.status==='excluded')d.effect='unavailable';
+   else if(panel?.dateRole==='projected_session')d.effect='context';
+  }
+ }
  const directions=new Set();
  for(const s of value.scenarios){if(!['up','down','neutral'].includes(s.direction)||directions.has(s.direction)||!['conditional','insufficient'].includes(s.status)||[s.triggerId,s.targetId].some(id=>id!==null&&!ids.has(id))||!['condition','confirmation','invalidation'].every(k=>typeof s[k]==='string'))throw Error('Invalid scenario.');directions.add(s.direction);}
  // A last quote or unconfirmed exposure reference cannot become a structural setup.
  for(const scenario of value.scenarios){
   if(scenario.status!=='conditional')continue;
   const boundaries=[scenario.triggerId,scenario.targetId].filter(Boolean).map(id=>value.levels.find(l=>l.id===id));
-  if(!scenario.triggerId||boundaries.some(l=>l.role!=='structure')||(scenario.direction==='neutral'&&!scenario.targetId)){
+  const from=value.levels.find(l=>l.id===scenario.triggerId),to=value.levels.find(l=>l.id===scenario.targetId);
+  const wrongOrder=to&&from&&(scenario.direction==='up'?to.price<=from.price:scenario.direction==='down'?to.price>=from.price:to.price===from.price);
+  if(!scenario.triggerId||wrongOrder||boundaries.some(l=>l.role!=='structure')||(scenario.direction==='neutral'&&!scenario.targetId)){
    scenario.status='insufficient';scenario.triggerId=null;scenario.targetId=null;
    scenario.condition='The supplied evidence does not establish the structural boundaries for this '+scenario.direction+' setup.';
    scenario.confirmation='Use an identified support, resistance or range boundary with visible price response. A last-price marker or raw model reference alone is insufficient.';
    scenario.invalidation='No actionable setup is established from those references.';
-   value.gaps.push('The '+scenario.direction+' path was withheld because it depended on a price/model reference rather than established price structure.');
+   value.gaps.push('The '+scenario.direction+' path was withheld because its structural boundaries or directional price order were not established.');
   }
  }
  for(const s of value.sources)if(!sources.has(s.id)||!['shows','importance','lookFor'].every(k=>typeof s[k]==='string'))throw Error('Invalid source explanation.');
@@ -127,11 +153,15 @@ Assign every level a role: structure for a visible support/resistance/retest/ran
 
 Use native ES chart coordinates when instrument is ES and basis is null. A pasted ES chart can support native ES structure after hours without a basis. SPX APIs and panels remain useful explanatory context, but may be translated to ES ONLY with the explicitly supplied basis; show that conversion and its historical time limitation. Never subtract later ES from frozen SPX and call it synchronized. Never use SPY x10, QQQ conversions or related-instrument prices as ES levels. Do not convert a value twice. Two related exposure providers are not independent confirmation.
 
-Identify up to eight relevant visible panels, each with a unique id and sourceId. When a source has capturedPanels, these are browser-measured panel titles and image regions. Select its exact capturedPanelId and title; do not guess coordinates or swap neighboring panels. Use its region verbatim, and mention when complete=false means only part was visible. When there is no capturedPanels list use capturedPanelId null and the full-image region. Do not invent or recreate unseen panels. Read the PRICE instrument from an actual contract/header/price axis or selected underlying. Quote that identifier in instrumentLabel and record instrumentEvidence. Metric/hedging units are separate: OptionsDepth underlying SPX with Gamma measured in ES futures/point is SPX price coordinates, not an ES chart. Exposure-units-only identification is excluded. An original chart's source confirmedContext is an explicit owner statement supplying cropped ES/date metadata; use instrumentEvidence/dateEvidence user_confirmed and state that provenance. Numeric prices still must come from the readable original image. Do not override a conflicting visible date/instrument or turn an exposure chart, GreeksDesk page, or nested thumbnail into native ES evidence. Without visible or owner-confirmed date return unknown and exclude it as numeric evidence. Assigned source sessionDate alone is not proof of observation date. Contract month can remain unknown when the owner confirms ES.
+Identify up to twelve relevant visible panels, each with a unique id and sourceId. When a source has capturedPanels, these are browser-measured panel titles and image regions. Select its exact capturedPanelId and title; do not guess coordinates or swap neighboring panels. Use its region verbatim, and mention when complete=false means only part was visible. When there is no capturedPanels list use capturedPanelId null and the full-image region. Do not invent or recreate unseen panels. Read the PRICE instrument from an actual contract/header/price axis or selected underlying. Quote that identifier in instrumentLabel and record instrumentEvidence. Metric/hedging units are separate: OptionsDepth underlying SPX with Gamma measured in ES futures/point is SPX price coordinates, not an ES chart. Exposure-units-only identification is excluded. An original chart's source confirmedContext is an explicit owner statement supplying cropped ES/date metadata; use instrumentEvidence/dateEvidence user_confirmed and state that provenance. Numeric prices still must come from the readable original image. Do not override a conflicting visible date/instrument or turn an exposure chart, GreeksDesk page, or nested thumbnail into native ES evidence. Without visible or owner-confirmed date return unknown and exclude it as numeric evidence. Assigned source sessionDate alone is not proof of observation date. Contract month can remain unknown when the owner confirms ES.
 
 Separate observed session dates, capture time, model time and expiration dates. OptionsDepth can roll forward after close: a Sep 8 forward model viewed after Sep 4 close is next-session planning context, not necessarily stale/wrong. Retain its displayed target date with dateRole projected_session, status context, and explain what it may help monitor next session. Never treat it as already observed price action or same-session ES confirmation. A usable panel must have legible matching visible/confirmed session and valid price instrument. Related instruments and forward models are context; unreadable or truly conflicting panels are excluded. For image-derived numeric levels cite usable panelIds with matching sourceIds and concrete location/evidence. API levels can have no panelId, but remain model_reference unless separate usable price structure establishes them.
 
 Explain what each supplied source actually shows, why it matters and what to watch. Include every API source in sources, with concrete returned observations, instrument and actual model time; its value should be clear even without ES conversion. Net Drift signed totals alone do not establish bullish/bearish pressure, option buying/selling, support or resistance. Inspect legible flow paths where available. Gamma heatmap rows are price coordinates, not necessarily option strikes or walls; raw unit scaling is unverified, label extrema as references and limit them to two. Dark-pool prints are transactions, not proof of institutional intent. Never force a Greek or panel into the plan just because it exists. Report missing/ambiguous panels and conflicting filters plainly.
+
+For each level give identity: category provider only when an explicit source indicator or API metric names it, quoting the exact sourceLabel; structure for your interpretation of visible price response; drawing when an annotation's indicator is unknown; quote for a last price. Name exactly what the level is, not generic 'ES reference', 'breakdown line' or 'traded marker'. Examples: 'Prior failed reclaim at 7716', 'Last observed ES price', or 'Unidentified red chart line'. Describe what is visible and explain the derivation separately. Never relabel an unknown drawing as a Greek. Derived exposure extrema must say the metric, units/scope, and that they are model references; they are not automatic trade triggers.
+
+ Each scenario must include a concise rationale and up to six drivers linking its sourceId and panelId (null for API-only evidence), effect supports/opposes/context/unavailable, and a concrete reason. Review all supplied tools; relevance decides the weight, not the count of indicators. Include conflicting evidence. Source explanations require change (a comparison with matching raw prior observations or timestamped buckets, otherwise 'No comparable earlier observation') and priceEffect (a conditional mechanism, not certainty). previousEvidence supplies the earlier API observations; compare only matching sessions, filters, units and distinct data times. Repeat/unchanged snapshots are not new market movement. Interval-map aggregates are separate time buckets, not a cumulative exposure snapshot, and their units are not assumed equal to raw exposure-by-strike. Do not compare magnitudes across different APIs/scales. Missing legs are not zero exposure. An unavailable API with available=false is a coverage gap and cannot support a scenario. SPY dark-pool data is related activity context, never ES price levels or evidence of directional intent. Dealer hedging/market-maker inventory implications are model-based hypotheses, not observed inventory changes. Separate the observation, possible mechanism and price confirmation needed. If a feed's observation timestamp is missing, state session snapshot and checked time separately; do not invent a live timestamp. Summarize all captured panels, even exclusions, and all API sources so the evidence desk exposes coverage honestly.
 
 Keep names short, descriptions concrete and avoid repetitive cautions. Use one short shows/reason sentence per panel, concise level/scenario explanations, and a useful combined summary in plain language (no terms such as basis is null). Historical sessions must consistently be labeled historical, never live/current. Previous summary is only for change comparison, not a source of current levels. Complete the map and three scenario assessments before an exhaustive panel inventory.`,input:[{role:'user',content}],text:{format:{type:'json_schema',name:'scenario_map',strict:true,schema:analysisSchema}}})});
    if(!r.ok)return {ok:false,message:`Analysis service returned HTTP ${r.status}. Check API access/billing if access was rejected. No retry was made.`};

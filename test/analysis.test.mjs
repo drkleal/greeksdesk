@@ -93,3 +93,17 @@ test('provider panel title and bounds come from captured layout rather than mode
  const legacy=validateAnalysis({...valid,panels:[{...panel,region:{x:.1,y:.1,width:.5,height:.5}}]},packet);
  assert.deepEqual(legacy.panels[0].region,{x:0,y:0,width:1,height:1});assert.equal(legacy.panels[0].locationVerified,false);
 });
+
+test('level identities prevent an unidentified drawing from becoming a trade trigger',()=>{
+ const level={id:'line',price:7716,label:'Red line',role:'structure',kind:'reference',sourceIds:['gamma'],panelIds:['p1'],evidence:'A red line',watch:'Wait',invalidation:'Unknown',identity:{category:'drawing',name:'Unidentified red chart line',sourceLabel:null,description:'Drawn annotation',derivation:'Its source indicator is unreadable'}};
+ const output=validateAnalysis({...structuredClone(valid),panels:[structuredClone(panel)],levels:[level],scenarios:valid.scenarios.map(s=>({...s,status:'conditional',triggerId:'line'}))},packet);
+ assert.equal(output.levels[0].role,'model_reference');assert.ok(output.scenarios.every(s=>s.status==='insufficient'));
+ assert.throws(()=>validateAnalysis({...structuredClone(valid),panels:[structuredClone(panel)],levels:[{...level,identity:{...level.identity,category:'provider'}}]},packet),/source label/);
+});
+test('wrong-way scenario target is withheld and future-model evidence cannot claim current support',()=>{
+ const levels=[100,110].map((price,i)=>({id:'l'+i,price,label:'Retest',role:'structure',kind:'reference',sourceIds:['gamma'],panelIds:['p1'],evidence:'Price reaction',watch:'Retest',invalidation:'Failure'}));
+ const future={...panel,id:'future',observedDate:'2026-09-08',dateRole:'projected_session',status:'context'};
+ const scenarios=valid.scenarios.map(s=>({...s,status:s.direction==='down'?'conditional':'insufficient',triggerId:s.direction==='down'?'l0':null,targetId:s.direction==='down'?'l1':null,drivers:[{sourceId:'gamma',panelId:'future',effect:'supports',reason:'Forward model'}]}));
+ const result=validateAnalysis({...structuredClone(valid),levels,panels:[structuredClone(panel),future],scenarios},packet);
+ assert.equal(result.scenarios.find(s=>s.direction==='down').status,'insufficient');assert.ok(result.scenarios.every(s=>s.drivers[0].effect==='context'));
+});
