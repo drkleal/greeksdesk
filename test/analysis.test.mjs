@@ -40,3 +40,11 @@ test('ES API references apply only the explicitly supplied basis',()=>{
  const input=validatePacket({date:'2026-09-04',instrument:'ES',basis:17.25,sources:[{id:'price',title:'SPX',sessionDate:'2026-09-04',data:{ticker:'SPX',latestPrice:7700}}]});
  return createAnalyzer({env:{}})(input).then(r=>assert.equal(r.analysis.levels[0].price,7717.25));
 });
+
+test('native ES mode never relabels SPX API references as ES',async()=>{
+ const r=await createAnalyzer({env:{}})({date:'2026-09-04',instrument:'ES',basis:null,sources:[{id:'price',title:'SPX',sessionDate:'2026-09-04',data:{ticker:'SPX',latestPrice:7700}}]});assert.deepEqual(r.analysis.levels,[]);
+ const native={...packet,instrument:'ES',basis:null};const nativePanel={...panel,instrument:'ES'};const level={id:'es-level',price:7725,label:'ES support',kind:'support',sourceIds:['gamma'],panelIds:['p1'],evidence:'Visible ES structure',watch:'Hold',invalidation:'Break'};
+ assert.equal(validateAnalysis({...valid,panels:[nativePanel],levels:[level]},native).levels.length,1);
+ assert.throws(()=>validateAnalysis({...valid,panels:[panel],levels:[level]},native));
+ assert.throws(()=>validateAnalysis({...valid,panels:[nativePanel],levels:[{...level,panelIds:[]}]},native));
+});
