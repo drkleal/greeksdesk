@@ -65,6 +65,8 @@ export function summarizeES(raw,now=Date.now()){
   volumeProfile,
   sessionProfiles:volumeProfile.sessionProfiles||{},
   structureScope:'Full observed futures session in 5-minute and 15-minute bars; last 120 one-minute bars for local timing. Aggregate OHLCV uses only returned minute records. complete=false means not every minute slot is represented; observedThrough is the last supplied minute end. Session range describes past movement, not a forecast.',
+  openingReference:(()=>{const b=cash.find(b=>nyTime(b.end)?.seconds===9*3600+36*60);return b?{price:b.close,timestamp:b.end}:null;})(),
+  cashCloseReference:cash.length?{price:cash.at(-1).close,timestamp:cash.at(-1).end}:null,
   priceObservations:bars.map(b=>({price:b.close,timestamp:b.end})),messages:raw.messages||[],estimatedHistoryCostUSD:raw.estimatedHistoryCostUSD,
   limitation:'Unadjusted '+raw.contract+' prices. Session window: prior 18:00–17:00 New York. Bars describe observed prices, not exchange settlement. Completed bar closes have interval-end timestamps; no exact trade-time claim. A fresh price does not refresh an older scenario.'};
 }

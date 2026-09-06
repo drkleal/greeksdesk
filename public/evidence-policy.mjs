@@ -9,6 +9,7 @@ export function sourceInstrument(source,panel){
 
 // These constraints also apply when opening a saved read in the browser.
 export function evidenceConstraint(source,panel,packet){
+ if(source?.data?.chartScope==='multi_day_context')return {effect:'context',reason:'User-supplied multi-day volume profile: background context only. Composite VAH/VAL are not chart levels or independent confirmation.'};
  if(source?.data?.available===false||panel?.status==='excluded')return {effect:'unavailable',reason:'This source was unavailable or excluded from this read. It cannot confirm or oppose the setup.'};
  if(panel?.dateRole==='projected_session')return {effect:'context',reason:'Forward model for '+panel.observedDate+'; planning context only, not observed price response in the '+packet.date+' session.'};
  if(panel&&(panel.observedDate!==packet.date||panel.dateRole!=='observed_session'||panel.dateEvidence==='unknown'))return {effect:'context',reason:'The panel does not establish an observed date matching this session. Its values cannot confirm these price boundaries.'};

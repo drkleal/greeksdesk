@@ -27,3 +27,12 @@ User-confirmed requirements, September 6, 2026. This is our independent app; the
 - Inspect the rendered app, chart ranges, hover, click, paste/replacement and responsive layout.
 - Verify the deployed version. Report actual coverage and remaining gaps plainly.
 - No brokerage connection or automated order placement.
+
+## September 6 comparison review
+- Added a left-side premium bar, separate refreshed and fixed 9:36 references, matched-minute VIX ratio, and a 60-session walk-forward comparison. A premium multiple is not labeled a statistical sigma. Missing/imbalanced legs remain unavailable.
+- Added a right-side vertical zoom control with reset. Source coordinates stay unchanged as the viewport changes.
+- Gamma expiration must be explicit. The next trading expiration is different from the historical session's 0DTE slice. Keep both available; a forward expiration is planning context.
+- DEX and Vanna bars show net exposure; overlapping component bars must not hide part of the total. Call and put components remain in the inspector. OI bars retain actual contracts and expiration scope, rather than Greek units.
+- Separate paste areas: DeepGamma, DeepCharts, session/daily VP, previous-daily VP, and multi-day profile context. Composite VAH/VAL stay off the chart.
+- Remaining data work: session/daily VAH/VAL need an actual profile distribution or readable dated profile; saved POC/HVN/LVN alone cannot recover them. Keep SPY dark pools as related context until a documented, time-matched proxy mapping is supplied. Confirm live-open behavior and model rollover with actual next-session data. Fresh DG/DC/VP images must be analyzed before claiming their agreement.
+- Remaining presentation work: compact plan summary beside the board, stronger visible source-concentration labels without implying that raw exposure creates a trade trigger, and a clear distinction between forward-model context and observed-session evidence.

@@ -1,5 +1,6 @@
 // Fixed, documented Quant Data endpoints. Credentials never leave the server response boundary.
 import {collectQuantPanels} from './quant-panels.mjs';
+import {collectStraddle} from './straddle-provider.mjs';
 const object=v=>v&&typeof v==='object'&&!Array.isArray(v);
 const finite=Number.isFinite;
 // Quant Data omits a leg when it has no exposure. Explicit null/invalid values
@@ -13,6 +14,7 @@ function legs(row,callKey,putKey){
 export function exposureSnapshot(payload,sessionDate,representationMode='RAW'){
  const root=payload?.data?.SPX;if(!object(root?.exposureMap))throw Error('Unrecognized exposure response');
  const strikes=new Map(),byExpiration=[];let incomplete=0,omitted=0;
+ const expirationDates=Object.keys(root.exposureMap).filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)&&(!sessionDate||d>=sessionDate)).sort().slice(0,3);
  const zeroDteAvailable=!!sessionDate&&Object.hasOwn(root.exposureMap,sessionDate);
  for(const [expiry,rows] of Object.entries(root.exposureMap)){
   if(!object(rows))throw Error('Unrecognized expiry rows');
@@ -21,16 +23,17 @@ export function exposureSnapshot(payload,sessionDate,representationMode='RAW'){
    if(!finite(Number(strike)))throw Error('Invalid strike');
    const entry=legs(row,'callExposure','putExposure');if(entry.net===null)incomplete++;omitted+=entry.omitted;
    expiryCall+=entry.call??0;expiryPut+=entry.put??0;expiryComplete&&=entry.net!==null;
-   const total=strikes.get(strike)||{strike:Number(strike),call:0,put:0,complete:true,expirations:[],zeroDte:null};
+   const strikeKey=Number(strike),total=strikes.get(strikeKey)||{strike:strikeKey,call:0,put:0,complete:true,expirations:[],zeroDte:null,expiryExposure:{}};
    if(expiry===sessionDate)total.zeroDte={call:entry.call,put:entry.put,net:entry.net};
-   total.call+=entry.call??0;total.put+=entry.put??0;total.complete&&=entry.net!==null;total.expirations.push(expiry);strikes.set(strike,total);
+   if(expirationDates.includes(expiry))total.expiryExposure[expiry]={call:entry.call,put:entry.put,net:entry.net};
+   total.call+=entry.call??0;total.put+=entry.put??0;total.complete&&=entry.net!==null;total.expirations.push(expiry);strikes.set(strikeKey,total);
   }
   byExpiration.push({expirationDate:expiry,call:expiryComplete?expiryCall:null,put:expiryComplete?expiryPut:null,net:expiryComplete?expiryCall+expiryPut:null});
  }
  const all=[...strikes.values()].map(r=>({...r,call:r.complete?r.call:null,put:r.complete?r.put:null,net:r.complete?r.call+r.put:null}));
  const stockPrice=finite(root.stockPrice)?root.stockPrice:null;
  return {normalizationVersion:2,stockPrice,strikeCount:all.length,incompleteLegPairs:incomplete,omittedZeroLegs:omitted,
-  ladderVersion:1,representationMode,byExpiration,zeroDteAvailable,zeroDteDate:sessionDate||null,
+  ladderVersion:1,representationMode,byExpiration,expirationDates,zeroDteAvailable,zeroDteDate:sessionDate||null,
   ladder:stockPrice===null?[]:all.filter(r=>Math.abs(r.strike-stockPrice)<=150).sort((a,b)=>Math.abs(a.strike-stockPrice)-Math.abs(b.strike-stockPrice)).slice(0,81).sort((a,b)=>a.strike-b.strike),
   ladderScope:'Up to 81 nearest strikes within 150 SPX points. All expirations and a separate same-session expiration slice; missing rows are not inferred.',
   strongest:all.filter(r=>r.net!==null).sort((a,b)=>Math.abs(b.net)-Math.abs(a.net)).slice(0,12),
@@ -59,7 +62,7 @@ export function darkFlow(payload){
  if(rows.some(r=>![r.timestamp,r.notionalValue,r.size,r.tradeCount].every(finite)))throw Error('Invalid dark-flow rows');
  return {bucketCount:rows.length,notionalTotal:rows.reduce((n,r)=>n+r.notionalValue,0),recentBuckets:rows.slice(-12).map(r=>({...r,timestamp:new Date(r.timestamp).toISOString()})),limitation:'Five-minute SPY dark-pool activity. Not directional order flow or direct evidence of dealer inventory.'};
 }
-export function createMarketContext({env=process.env,request=fetch}={}){
+export function createMarketContext({env=process.env,request=fetch,openingHistory}={}){
  let pending=null;const cache=new Map();
  return async date=>{
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||new Date(date).toISOString().slice(0,10)!==date)throw Error('Invalid date');
@@ -85,7 +88,9 @@ export function createMarketContext({env=process.env,request=fetch}={}){
     ['dark-flow','SPY dark-pool activity','/v1/equities/tool/dark-flow',{sessionDate:date,aggregationPeriod:'5m',filter:{ticker:'SPY'}},darkFlow]
    ].map(async([id,title,path,body,normalize])=>({id:'qd-'+id,title:'Quant Data · '+title,sessionDate:date,capturedAt:checkedAt,url:'https://v3.quantdata.us/',data:{ticker:'SPY',sessionDate:date,checkedAt,contextOnly:true,...await post(path,body,normalize)}})));
    const panels=await collectQuantPanels(date,post,checkedAt,greekSources.find(s=>Number.isFinite(s.data.stockPrice))?.data.stockPrice??null);
-   const sources=[...greekSources,...equity,...panels];
+   const straddle=await collectStraddle(date,post,checkedAt);
+   if(openingHistory){await openingHistory.remember(straddle.data.opening);straddle.data.history=await openingHistory.records(date);}
+   const sources=[...greekSources,...equity,...panels,straddle];
    const result={ok:true,count:sources.length,sources,requestCount:calls,checkedAt};cache.set(date,{time:Date.now(),result});if(cache.size>8)cache.delete(cache.keys().next().value);return result;
   }finally{pending=null;}
  };

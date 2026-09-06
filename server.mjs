@@ -1,5 +1,6 @@
 import http from 'node:http';
 import {createMarketContext} from './market-context.mjs';
+import {createOpeningHistory} from './opening-history.mjs';
 import {createOptionsDepthContext} from './optionsdepth-context.mjs';
 import {createDatabento} from './databento.mjs';
 import {validateChartContext} from './chart-context.mjs';
@@ -17,9 +18,11 @@ function matches(a, b) {
 }
 
 export function createServer(password = process.env.DESK_PASSWORD) {
-  const baseCheck = createProviderChecks(), marketContext = createMarketContext(), odContext=createOptionsDepthContext(), esData=createDatabento();
+  const openingHistory=createOpeningHistory();
+  const baseCheck = createProviderChecks(), marketContext = createMarketContext({openingHistory}), odContext=createOptionsDepthContext(), esData=createDatabento();
   const checkProvider=async(provider,date,selection)=>{
     if(provider==='quantdata-context')return marketContext(date);
+    if(provider==='straddle-history')return openingHistory.batch(date,selection?.offset||0);
     if(provider==='optionsdepth-context')return odContext(date,selection);
     if(provider==='databento'){
       const result=await esData(date,selection?.symbol||undefined);
@@ -72,7 +75,7 @@ export function createServer(password = process.env.DESK_PASSWORD) {
       }
       try {
         const query = new URL(req.url, 'http://localhost').searchParams;
-        const result = await checkProvider(query.get('provider'), query.get('date'), {symbol:query.get('symbol'),slot:query.get('slot'),min:Number(query.get('min')),max:Number(query.get('max'))});
+        const result = await checkProvider(query.get('provider'), query.get('date'), {symbol:query.get('symbol'),slot:query.get('slot'),min:Number(query.get('min')),max:Number(query.get('max')),offset:Number(query.get('offset'))});
         res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(result));
       } catch {
         res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ok:false,message:'Select a valid provider and session date.'}));
@@ -84,7 +87,7 @@ export function createServer(password = process.env.DESK_PASSWORD) {
     }
     const scripts = {'/evidence-policy.mjs':'./public/evidence-policy.mjs','/plan.mjs':'./public/plan.mjs','/evidence.mjs':'./public/evidence.mjs','/session.mjs':'./public/session.mjs','/connector.mjs':'./public/connector.mjs','/desk.mjs':'./public/desk.mjs','/desk.css':'./public/desk.css','/map.mjs':'./public/map.mjs','/capture.mjs':'./public/capture.mjs','/exposure.js':'./public/exposure.js','/connections.mjs':'./public/connections.mjs','/update-loop.mjs':'./public/update-loop.mjs'};
     scripts['/price-evidence.mjs']='./public/price-evidence.mjs';
-    for(const asset of ['workbench.mjs','confluence.mjs','workbench.css','chart-intake.mjs','level-board.mjs'])scripts['/'+asset]='./public/'+asset;
+    for(const asset of ['workbench.mjs','confluence.mjs','workbench.css','chart-intake.mjs','level-board.mjs','straddle.mjs','straddle-panel.mjs'])scripts['/'+asset]='./public/'+asset;
     if (!['/', '/index.html', '/preview', '/connections', '/connector', '/chart-connector.zip', ...Object.keys(scripts)].includes(req.url)) {
       res.writeHead(404);
       return res.end('Not found');

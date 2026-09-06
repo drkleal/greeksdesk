@@ -48,14 +48,19 @@ test('explicit null and malformed exposure remain unknown, not documented zeros'
  assert.equal(intervalPath({data:{'1000':{expiry:{'10':{CALL:50,PUT:null}}}}})[0].net,null);
  assert.throws(()=>exposureSnapshot({data:{SPX:{exposureMap:{expiry:{'100':null}}}}}),/Invalid exposure/);
 });
+test('expiration slices preserve exact strike keys, including equivalent decimal spellings',()=>{
+ const r=exposureSnapshot({data:{SPX:{stockPrice:7700,exposureMap:{'2026-09-04':{'7700.0':{callExposure:30,putExposure:-40}},'2026-09-08':{'7700':{callExposure:13,putExposure:-3}}}}}},'2026-09-04');
+ assert.equal(r.strikeCount,1);assert.deepEqual(r.expirationDates,['2026-09-04','2026-09-08']);
+ assert.equal(r.ladder[0].zeroDte.net,-10);assert.equal(r.ladder[0].expiryExposure['2026-09-08'].net,10);assert.equal(r.ladder[0].net,0);
+});
 test('historical dark-pool context excludes request-time price',()=>{
  const r=darkPoolLevels({latestStockPrice:999,data:{'700':{notionalValue:5000,size:10,tradeCount:2}}});
  assert.ok(!JSON.stringify(r).includes('999'));assert.equal(r.levels[0].price,700);
 });
 test('market context is bounded, caches results, reports failures, and never returns credentials',async()=>{
  const calls=[];const fetcher=createMarketContext({env:{QUANT_DATA_API_KEY:'private-key'},request:async(url,options)=>{calls.push([url,JSON.parse(options.body)]);assert.equal(options.headers.Authorization,'Bearer private-key');return {ok:false,status:422};}});
- const first=await fetcher('2026-09-04');assert.equal(first.requestCount,25);assert.equal(first.sources.length,24);assert.ok(first.sources.every(s=>s.data.available===false));assert.ok(!JSON.stringify(first).includes('private-key'));
- assert.equal((await fetcher('2026-09-04')).cached,true);assert.equal(calls.length,25);assert.ok(calls.every(([url])=>url.startsWith('https://api.quantdata.us/v1/')));
+ const first=await fetcher('2026-09-04');assert.equal(first.requestCount,28);assert.equal(first.sources.length,25);assert.ok(first.sources.every(s=>s.data.available===false));assert.ok(!JSON.stringify(first).includes('private-key'));
+ assert.equal((await fetcher('2026-09-04')).cached,true);assert.equal(calls.length,28);assert.ok(calls.every(([url])=>url.startsWith('https://api.quantdata.us/v1/')));
  assert.equal(calls.filter(([,body])=>body.filter.ticker==='SPY').length,3);
 });
 test('coverage exposes captured panels omitted from the analysis and unavailable API feeds',()=>{

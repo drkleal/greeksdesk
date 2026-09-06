@@ -11,6 +11,7 @@ function chip(text,color){const c=el('span',text,'wb-chip');if(color)c.style.set
 const when=t=>Number.isFinite(Date.parse(t))?new Date(t).toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+' ET':'Time unavailable';
 export function refreshWorkbenchAge(host){const badge=host?.querySelector('[data-quote-time]');if(badge)badge.textContent=quoteStatus({latestTimestamp:badge.dataset.quoteTime,freshness:badge.dataset.freshness});}
 export function markWorkbenchOld(host){const notice=host?.querySelector('.wb-read-notice');if(notice)notice.hidden=false;}
+export function refreshWorkbenchMarketData(host,date,sources){host?.querySelector('.wb-confluence-board')?.dispatchEvent(new CustomEvent('straddle-update',{detail:{date,sources}}));}
 export function renderWorkbench(host,read,{panelButton,chartButton}={}){
  host.replaceChildren();const a=read.result.analysis,feed=read.sources.find(s=>s.id==='databento')?.data||{},conversion=conversionFor(read),inventory=familyInventory(read),columns=exposureColumns(read);
  const dialog=el('dialog',undefined,'wb-inspector');

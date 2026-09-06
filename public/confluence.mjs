@@ -13,7 +13,7 @@ export function familyFor(title=''){
  if(/dark|equity print|institution/.test(t))return 'institutional';
  if(/charm/.test(t))return 'charm';if(/vanna/.test(t))return 'vanna';
  if(/delta|\bdex\b/.test(t))return 'delta';if(/gamma|\bgex\b|exposure/.test(t))return 'gamma';
- if(/volatil|\biv\b|skew|term structure/.test(t))return 'volatility';
+ if(/volatil|\biv\b|skew|term structure|straddle|vix/.test(t))return 'volatility';
  if(/profile|vwap|depthview|acceptance/.test(t))return 'acceptance';
  if(/interest|position|pain/.test(t))return 'positioning';
  if(/flow|drift|sweep|gainer/.test(t))return 'flow';
@@ -49,19 +49,22 @@ export function familyObservation(read,id){
  if(id==='positioning'){const d=get('qd-oi-strike'),rows=(d?.rows||[]).filter(r=>Number.isFinite(r.callOpenInterest)&&Number.isFinite(r.putOpenInterest)),top=rows.sort((a,b)=>b.callOpenInterest+b.putOpenInterest-a.callOpenInterest-a.putOpenInterest)[0];return top?'Largest supplied OI '+compact(top.callOpenInterest+top.putOpenInterest)+' @ SPX '+top.strike:null;}
  return null;
 }
-export function exposureColumns(read){
+export function exposureColumns(read,{expirationDate=read.date}={}){
  const columns=[];
  for(const [id,title,family,zero] of [['qd-gamma','QD Gamma · all','gamma',false],['qd-gamma','QD Gamma · 0DTE','gamma',true],['qd-delta','QD DEX','delta',false],['qd-vanna','QD Vanna','vanna',false],['qd-charm','QD Charm','charm',false]]){
   const source=read.sources.find(s=>s.id===id),d=source?.data;
   const rows=d?.available===false?[]:(d?.ladder||[...new Map([...(d?.nearby||[]),...(d?.strongest||[])].map(r=>[r.strike,r])).values()]);
-  columns.push({id:id+(zero?'-0dte':''),title,family,source,unit:d?.representationMode==='PER_ONE_PERCENT_MOVE'?'Per 1% move':'RAW',scope:zero?'Expiration '+(d?.zeroDteDate||read.date):'All expirations',partial:!d?.ladder,
-   rows:rows.map(r=>({price:r.strike,call:zero?r.zeroDte?.call:r.call,put:zero?r.zeroDte?.put:r.put,net:zero?r.zeroDte?.net:r.net})).filter(r=>Number.isFinite(r.net))});
+  const slice=r=>r.expiryExposure?.[expirationDate]||(expirationDate===(d?.zeroDteDate||read.date)?r.zeroDte:null);
+  columns.push({id:id+(zero?'-0dte':''),title:zero?'QD Gamma · expiration '+expirationDate:title,family,source,unit:d?.representationMode==='PER_ONE_PERCENT_MOVE'?'Per 1% move':'RAW',scope:zero?'Expiration '+expirationDate+(expirationDate!==read.date?' · forward planning context':' · selected session'):'All expirations',partial:!d?.ladder,
+   rows:rows.map(r=>({price:r.strike,call:zero?slice(r)?.call:r.call,put:zero?slice(r)?.put:r.put,net:zero?slice(r)?.net:r.net})).filter(r=>Number.isFinite(r.net))});
  }
  const od=read.sources.find(s=>s.id==='gamma'),d=od?.data;
  columns.push({id:'od-gamma',title:'OD Gamma model',family:'gamma',source:od,unit:'Provider model units',scope:d?.actualSlot||'Model sample',partial:false,
   rows:d?.ok===false?[]:(d?.rows||[]).filter(r=>Number.isFinite(r.price)&&Number.isFinite(r.value)).map(r=>({price:r.price,net:r.value}))});
  for(const [id,title,family]of [['od-gex-mm-strike','OD Dealer Gamma','gamma'],['od-dex-mm-strike','OD Dealer DEX','delta'],['od-vex-mm-strike','OD Dealer Vanna','vanna']]){const source=read.sources.find(s=>s.id===id),data=source?.data;if(source)columns.push({id,title,family,source,unit:'OD metric units',scope:data.actualSlot||data.requestedSlot,rows:data.available===false?[]:(data.rows||[]).map(r=>({price:r.strike,net:r.value}))});}
  const oi=read.sources.find(s=>s.id==='qd-oi-strike');if(oi)columns.push({id:'qd-oi-strike',title:'QD Open Interest',family:'positioning',source:oi,unit:'Contracts',scope:oi.data.scope,rows:(oi.data.available===false?[]:oi.data.rows||[]).map(r=>({price:r.strike,call:r.callOpenInterest,put:r.putOpenInterest,net:Number.isFinite(r.callOpenInterest)&&Number.isFinite(r.putOpenInterest)?r.callOpenInterest+r.putOpenInterest:null})).filter(r=>Number.isFinite(r.net))});
+ const premium=read.sources.find(s=>s.id==='qd-straddle'),expiryOI=premium?.data.openInterest;
+ if(expiryOI?.available)columns.push({id:'qd-oi-strike-0dte',title:'QD Open Interest · session expiration',family:'positioning',source:premium,unit:'Contracts',scope:'Expiration '+expiryOI.expirationDate+' · OI observed '+expiryOI.observationDate+' · bounded supplied strikes',rows:expiryOI.rows.map(r=>({price:r.strike,call:r.callOpenInterest,put:r.putOpenInterest,net:Number.isFinite(r.callOpenInterest)&&Number.isFinite(r.putOpenInterest)?r.callOpenInterest+r.putOpenInterest:null})).filter(r=>Number.isFinite(r.net))});
  return columns;
 }
 export function sanitizeConfluence(analysis,packet){
