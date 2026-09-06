@@ -1,4 +1,5 @@
 import http from 'node:http';
+import {validateChartContext} from './chart-context.mjs';
 import {readBasis,BasisReadError} from './basis.mjs';
 import {validDate} from './public/session.mjs';
 import { readFile } from 'node:fs/promises';
@@ -41,7 +42,7 @@ export function createServer(password = process.env.DESK_PASSWORD) {
     }
     if(req.url==='/api/basis'){
       if(req.method!=='POST'||req.headers['x-greeksdesk-action']!=='manual-check'||req.headers['sec-fetch-site']==='cross-site'){res.writeHead(403);return res.end();}
-      try{let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>3100000){res.writeHead(413);return res.end();}}const input=JSON.parse(raw);if(!validDate(input.date))throw new BasisReadError('Select a valid session date before reading the ES screenshot.');const spx=await checkProvider('quantdata',input.date);if(!spx.ok||!spx.latestPrice)throw Error('No matching SPX reference is available.');const result=await readBasis(input.image,spx,input.date);res.writeHead(200,{'Content-Type':'application/json'});return res.end(JSON.stringify(result));}catch(error){res.writeHead(400,{'Content-Type':'application/json'});return res.end(JSON.stringify({ok:false,message:error instanceof BasisReadError||error.message?.startsWith('No matching')?error.message:'Unable to establish a verified basis from this image. Include ES price, date and chart timezone.'}));}
+      try{let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>3100000){res.writeHead(413);return res.end();}}const input=JSON.parse(raw);if(!validDate(input.date))throw new BasisReadError('Select a valid session date before reading the ES screenshot.');const context=validateChartContext(input.confirmedContext,input.date);const spx=await checkProvider('quantdata',input.date);const result=await readBasis(input.image,spx.ok?spx:{priceObservations:[]},input.date,{context});res.writeHead(200,{'Content-Type':'application/json'});return res.end(JSON.stringify(result));}catch(error){res.writeHead(400,{'Content-Type':'application/json'});return res.end(JSON.stringify({ok:false,message:error instanceof BasisReadError||error.message?.startsWith('No matching')?error.message:'Unable to establish a verified basis from this image. Include ES price, date and chart timezone.'}));}
     }
     if (req.url === '/api/analyze') {
       if(req.method!=='POST'||req.headers['x-greeksdesk-action']!=='manual-check'||req.headers['sec-fetch-site']==='cross-site') {res.writeHead(403);return res.end('Same-origin action required');}

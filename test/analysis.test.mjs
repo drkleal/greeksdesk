@@ -29,7 +29,7 @@ test('data-only reference read has exact extrema and no AI request or trading tr
  assert.equal(calls,0);assert.equal(r.ok,true);assert.equal(r.analysis.levels.find(l=>l.label==='Negative Gamma reference').price,7740.5);assert.ok(r.analysis.scenarios.every(s=>s.status==='insufficient'&&s.triggerId===null));
 });
 
-const panel={id:'p1',sourceId:'gamma',title:'Price',instrument:'SPX',instrumentEvidence:'price_axis',instrumentLabel:'SPX',metricUnits:'price points',observedDate:'2026-09-04',dateRole:'observed_session',status:'usable',reason:'Readable',shows:'Price structure',region:{x:0,y:0,width:1,height:1}};
+const panel={id:'p1',sourceId:'gamma',title:'Price',instrument:'SPX',instrumentEvidence:'price_axis',instrumentLabel:'SPX',metricUnits:'price points',observedDate:'2026-09-04',dateEvidence:'visible',dateRole:'observed_session',status:'usable',reason:'Readable',shows:'Price structure',region:{x:0,y:0,width:1,height:1}};
 test('panel evidence excludes mismatched dates and cross-instrument prices',()=>{
  assert.throws(()=>validateAnalysis({...valid,panels:[{...panel,observedDate:'2026-09-08'}]},packet));
  assert.throws(()=>validateAnalysis({...valid,panels:[{...panel,instrument:'SPY'}]},packet));
@@ -62,4 +62,16 @@ test('next-session exposure remains planning context without becoming observed l
  assert.equal(validateAnalysis({...valid,panels:[forward]},packet).panels[0].status,'context');
  assert.throws(()=>validateAnalysis({...valid,panels:[{...forward,status:'usable'}]},packet));
  assert.throws(()=>validateAnalysis({...valid,panels:[{...forward,observedDate:packet.date,status:'usable'}]},packet),/Projected sessions/);
+});
+
+test('cropped ES metadata can use source-specific owner confirmation without a basis',()=>{
+ const confirmedContext={instrument:'ES',sessionDate:packet.date,priceTime:'17:00',timezone:'America/New_York'};
+ const native=validatePacket({...packet,instrument:'ES',basis:null,sources:[{...packet.sources[0],confirmedContext}]});
+ const confirmedPanel={...panel,instrument:'ES',instrumentEvidence:'user_confirmed',instrumentLabel:'ES (chart owner)',dateEvidence:'user_confirmed'};
+ const level={id:'es-retest',price:7716,label:'Visible ES retest',sourceIds:['gamma'],panelIds:['p1'],evidence:'Chart price; date and ES supplied by owner',watch:'Observe retest',invalidation:'Acceptance through the level'};
+ assert.equal(validateAnalysis({...valid,panels:[confirmedPanel],levels:[level]},native).levels[0].price,7716);
+ assert.throws(()=>validateAnalysis({...valid,panels:[confirmedPanel]}, {...native,sources:[{...native.sources[0],confirmedContext:null}]}),/no user confirmation/);
+ assert.throws(()=>validatePacket({...native,sources:[{...native.sources[0],confirmedContext:{...confirmedContext,sessionDate:'2026-09-03'}}]}));
+ assert.throws(()=>validatePacket({...native,sources:[{...native.sources[0],image:undefined}]}),/requires an image/);
+ assert.throws(()=>validateAnalysis({...valid,panels:[{...confirmedPanel,observedDate:'2026-09-08',dateEvidence:'visible'}]},native),/date mismatch/);
 });
