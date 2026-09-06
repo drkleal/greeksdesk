@@ -28,7 +28,7 @@ export function appendPriceEvidence(host,level,sources){
  const add=(tag,attrs={},text)=>{const el=document.createElementNS(svg.namespaceURI,tag);for(const[k,v]of Object.entries(attrs))el.setAttribute(k,String(v));if(text!==undefined)el.textContent=text;svg.append(el);return el;};
  const start=Date.parse(e.rows[0].timestamp),end=Date.parse(e.rows.at(-1).end),lo=Math.min(level.price,...e.rows.map(b=>b.low)),hi=Math.max(level.price,...e.rows.map(b=>b.high)),padding=Math.max(.5,(hi-lo)*.06),bottom=lo-padding,top=hi+padding;
  const x=t=>16+830*(t-start)/(end-start),y=p=>14+230*(top-p)/(top-bottom),select=(b,g)=>{for(const item of svg.querySelectorAll('[data-bar]'))item.classList.toggle('active-bar',item===g);caption.textContent=stamp(b.timestamp)+'–'+stamp(b.observedThrough??b.end)+' | Open '+price(b.open)+' · High '+price(b.high)+' · Low '+price(b.low)+' · Close '+price(b.close)+(b.complete===false?' · Partial interval':'');};
- for(let i=0;i<5;i++){const value=bottom+(top-bottom)*i/4;add('line',{x1:16,x2:848,y1:y(value),y2:y(value),stroke:'#245574'});add('text',{x:858,y:y(value)+4,fill:'#c0dded','font-size':12},price(value));}
+ for(let i=0;i<5;i++){const value=bottom+(top-bottom)*i/4;add('line',{x1:16,x2:848,y1:y(value),y2:y(value),stroke:'#245574'});if(Math.abs(y(value)-y(level.price))>=18)add('text',{x:858,y:y(value)+4,fill:'#c0dded','font-size':12},price(value));}
  e.rows.forEach((b,index)=>{
   const t=Date.parse(b.timestamp),finish=Date.parse(b.end),cx=x((t+finish)/2),width=Math.max(1.5,Math.min(18,830*(finish-t)/(end-start)*.6)),color=b.close>=b.open?'#14ffc9':'#ff4d8c';
   const g=add('g',{'data-bar':index,tabindex:0,role:'button','aria-label':stamp(t)+' open '+b.open+' high '+b.high+' low '+b.low+' close '+b.close,'class':index===e.selected?'cited-bar':'','style':'cursor:pointer'});
@@ -39,7 +39,7 @@ export function appendPriceEvidence(host,level,sources){
   g.addEventListener('click',()=>select(b,g));g.addEventListener('keydown',event=>{if(['Enter',' '].includes(event.key)){event.preventDefault();select(b,g);}});
  });
  add('line',{x1:16,x2:848,y1:y(level.price),y2:y(level.price),stroke:'#ffe15a','stroke-dasharray':'5 4','pointer-events':'none'});
- add('text',{x:858,y:y(level.price)-6,fill:'#ffe15a','font-size':13,'font-weight':700},price(level.price));
+ add('text',{x:858,y:y(level.price)+4,fill:'#ffe15a','font-size':13,'font-weight':700},price(level.price));
  for(const [t,anchor]of [[start,'start'],[(start+end)/2,'middle'],[end,'end']])add('text',{x:x(t),y:280,fill:'#c0dded','font-size':12,'text-anchor':anchor},stamp(t));
  const selected=e.selected===null?null:e.rows[e.selected];if(selected)select(selected,svg.querySelector('[data-bar="'+e.selected+'"]'));else caption.textContent='Verified '+e.field+' over '+stamp(e.scope.from)+'–'+stamp(e.scope.through)+'. The horizontal line marks that summary price.';
  box.append(svg,caption,node('small','Bars plot returned trade data. Missing intervals stay blank. High/low prices occurred within each interval; the bar-start time is not an exact trade time.','muted'));host.append(box);
