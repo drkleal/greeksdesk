@@ -28,6 +28,15 @@ test('no key, refusal or truncated analysis never applies a partial map',async()
  assert.equal((await createAnalyzer({env:{}})(packet)).ok,false);
  for(const body of [{status:'incomplete'}, {status:'completed',output:[{content:[{type:'refusal',refusal:'No'}]}]}]){const analyze=createAnalyzer({env:{OPENAI_API_KEY:'secret'},request:async()=>({ok:true,json:async()=>body})});const r=await analyze(packet);assert.equal(r.ok,false);assert.ok(!JSON.stringify(r).includes('secret'));}
 });
+test('large source inventories have room for the complete review and retain failed usage without retrying',async()=>{
+ let calls=0;
+ const input={...packet,sources:Array.from({length:50},(_,i)=>({...packet.sources[0],id:'source-'+i,...(i?{image:undefined}:{})}))};
+ const analyze=createAnalyzer({env:{OPENAI_API_KEY:'secret'},request:async(url,options)=>{
+  calls++;const request=JSON.parse(options.body);assert.equal(request.max_output_tokens,40000);assert.equal(request.store,false);
+  return {ok:true,json:async()=>({status:'incomplete',incomplete_details:{reason:'max_output_tokens'},usage:{input_tokens:50000,output_tokens:40000}})};
+ }});
+ const r=await analyze(input);assert.equal(r.ok,false);assert.equal(r.code,'analysis_limit');assert.equal(r.analysis,undefined);assert.deepEqual(r.usage,{inputTokens:50000,outputTokens:40000});assert.equal(calls,1);
+});
 
 test('analysis distinguishes timeouts, malformed replies and invalid evidence without exposing upstream errors',async()=>{
  const run=request=>createAnalyzer({env:{OPENAI_API_KEY:'private'},request})(packet);
@@ -44,6 +53,11 @@ test('data-only reference read has exact extrema and no AI request or trading tr
 });
 
 const panel={id:'p1',sourceId:'gamma',title:'Price',instrument:'SPX',instrumentEvidence:'price_axis',instrumentLabel:'SPX',metricUnits:'price points',observedDate:'2026-09-04',dateEvidence:'visible',dateRole:'observed_session',status:'usable',reason:'Readable',shows:'Price structure',region:{x:0,y:0,width:1,height:1}};
+test('neutral IDs can link an explicit exact range but cannot invent or choose ambiguous boundaries',()=>{
+ const build=(range,upperRole='structure')=>({...structuredClone(valid),panels:[panel],levels:[7710,7725].map((price,i)=>({id:'range-'+i,price,role:i?upperRole:'structure',kind:i?'resistance':'support',label:'Observed range edge',sourceIds:['gamma'],panelIds:['p1'],evidence:'Repeated price response',watch:'Retest',invalidation:'Acceptance outside'})),scenarios:valid.scenarios.map(s=>({...s,...(s.direction==='neutral'?{status:'conditional',condition:'Price holds a range.',invalidation:'Acceptance outside '+range+' ends the range.'}:{})}))});
+ const fixed=validateAnalysis(build('7,710.00–7,725.00'),packet).scenarios[2];assert.equal(fixed.status,'conditional');assert.equal(fixed.triggerId,'range-0');assert.equal(fixed.targetId,'range-1');assert.ok(fixed.boundaryResolution);
+ for(const value of [build('7710-7726'),build('7710-7725','last_price'),build('7725-7710')])assert.equal(validateAnalysis(value,packet).scenarios[2].status,'insufficient');
+});
 test('panel evidence excludes mismatched dates and cross-instrument prices',()=>{
  assert.throws(()=>validateAnalysis({...valid,panels:[{...panel,observedDate:'2026-09-08'}]},packet));
  assert.throws(()=>validateAnalysis({...valid,panels:[{...panel,instrument:'SPY'}]},packet));

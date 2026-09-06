@@ -34,6 +34,14 @@ test('repeat provider views never increase the supporting family count and unkno
  assert.deepEqual(confluenceSummary([{family:'gamma',effect:'supports'},{family:'gamma',effect:'supports'},{family:'flow',effect:'opposes'}]),{support:['gamma'],oppose:['flow'],context:[]});
  const f=familyInventory(read);assert.equal(f.find(x=>x.id==='gamma').items.length,2);assert.equal(f.find(x=>x.id==='volatility').items.length,0);
 });
+test('same-source support and contrary context remain distinct without multiplying support',()=>{
+ const read=fixture(),a=read.result.analysis;
+ const e={levelId:'reclaim',sourceId:'databento',panelId:null,family:'price',effect:'supports',observation:'Repeated rejection',mechanism:'Response at this boundary',watch:'Acceptance'};
+ a.confluence=[e,{...e,effect:'context',observation:'Older level above this boundary'}];
+ sanitizeConfluence(a,read);assert.equal(a.confluence.length,2);assert.equal(confluenceLabel(a.confluence).count,1);
+ a.confluence.push({...e,effect:'opposes',observation:'Later price accepted through the boundary'});
+ sanitizeConfluence(a,read);assert.equal(confluenceLabel(a.confluence).count,0);
+});
 
 test('gold stars require three or four distinct supporting families',()=>{
  const rows=['gamma','delta','acceptance','flow','positioning'].map(family=>({family,effect:'supports'}));

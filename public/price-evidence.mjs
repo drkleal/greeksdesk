@@ -5,8 +5,21 @@ const price=value=>value.toLocaleString('en-US',{minimumFractionDigits:2,maximum
 export function priceEvidence(level,sources){
  const o=level.apiOrigin,source=sources.find(s=>s.id===o?.sourceId),d=source?.data;
  if(!o||!d?.available||d.ticker!=='ES'||d.dataset!=='GLBX.MDP3'||!/^ES[HMUZ]\d{1,2}$/.test(d.contract))return null;
- let rows,selected,frame=o.timeframe,scope;
- if(o.sessionDate!==source.sessionDate){
+ let rows,selected,frame=o.timeframe,scope,profileReference;
+ const profile=d.volumeProfile,sessionName={asia_profile:'Asia',london_profile:'London',overnight_profile:'Overnight',rth_profile:'RTH'}[frame];
+ if(o.sessionDate===source.sessionDate&&(frame==='volume_profile'||sessionName)){
+  if(!profile?.available||profile.contract!==d.contract||profile.schema!=='trades'||!profile.completeWindow)return null;
+  if(frame==='volume_profile'){
+   const point=profile.nodes?.find(n=>n.kind.toLowerCase()===o.field&&n.price===level.price);
+   if(!point||profile.through!==o.timestamp)return null;
+   scope=profile;profileReference=point.kind+' · '+point.reason+' '+point.volume.toLocaleString('en-US')+' contracts in its bucket.';
+  }else{
+   scope=d.sessionProfiles?.[sessionName];
+   if(!scope||!['high','low','vwap'].includes(o.field)||scope[o.field]!==level.price||scope.through!==o.timestamp)return null;
+   profileReference=sessionName+' '+o.field.toUpperCase()+' · '+scope.volume.toLocaleString('en-US')+' contracts · '+(o.field==='vwap'?scope.vwapMethod:'Extremum of actual trades in this window.');
+  }
+  rows=d.bars5m?.filter(b=>Date.parse(b.timestamp)>=Date.parse(scope.from)&&Date.parse(b.observedThrough??b.end)<=Date.parse(scope.through));frame='5m';
+ }else if(o.sessionDate!==source.sessionDate){
   const c=d.priorContext;if(o.timeframe!=='1h'||!c?.available||c.contract!==d.contract||o.sessionDate>=source.sessionDate)return null;
   rows=c.sessions?.find(s=>s.sessionDate===o.sessionDate)?.bars;
  }else if(['session','cash_session'].includes(frame)){
@@ -17,13 +30,14 @@ export function priceEvidence(level,sources){
  rows=[...rows].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp));
  if(rows.some(b=>!Number.isFinite(Date.parse(b.timestamp))||!Number.isFinite(Date.parse(b.end))||Date.parse(b.end)<=Date.parse(b.timestamp)||!['open','high','low','close'].every(k=>Number.isFinite(b[k]))||b.low>Math.min(b.open,b.close)||b.high<Math.max(b.open,b.close)))return null;
  if(!scope){selected=rows.findIndex(b=>Date.parse(b.timestamp)===Date.parse(o.timestamp)&&b[o.field]===level.price);if(selected<0)return null;}
- return {contract:d.contract,date:o.sessionDate,frame,rows,selected:selected??null,scope,field:o.field};
+ return {contract:d.contract,date:o.sessionDate,frame,rows,selected:selected??null,scope,field:o.field,profileReference};
 }
 
 export function appendPriceEvidence(host,level,sources){
  const e=priceEvidence(level,sources);if(!e)return;
  const box=node('section',undefined,'price-evidence'),caption=node('p',undefined,'price-bar-caption');
- box.append(node('h3',e.contract+' price evidence · '+e.date),node('p','Databento '+e.frame+' trade bars · '+(e.scope?'session summary reference':'white outline marks the cited bar')+' · select any bar for its prices.','muted'));
+ box.append(node('h3',e.contract+' price evidence · '+e.date),node('p',e.profileReference||'Databento '+e.frame+' trade bars · '+(e.scope?'session summary reference':'white outline marks the cited bar')+' · select any bar for its prices.','muted'));
+ if(e.profileReference)box.append(node('p','The gold line marks the trade-derived value. Five-minute bars below show surrounding price behavior; they were not used to estimate the profile or VWAP.','muted'));
  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 960 300');svg.setAttribute('role','group');svg.setAttribute('aria-label',e.contract+' '+e.date+' source price bars');
  const add=(tag,attrs={},text)=>{const el=document.createElementNS(svg.namespaceURI,tag);for(const[k,v]of Object.entries(attrs))el.setAttribute(k,String(v));if(text!==undefined)el.textContent=text;svg.append(el);return el;};
  const start=Date.parse(e.rows[0].timestamp),end=Date.parse(e.rows.at(-1).end),lo=Math.min(level.price,...e.rows.map(b=>b.low)),hi=Math.max(level.price,...e.rows.map(b=>b.high)),padding=Math.max(.5,(hi-lo)*.06),bottom=lo-padding,top=hi+padding;

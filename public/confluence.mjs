@@ -71,7 +71,10 @@ export function sanitizeConfluence(analysis,packet){
  for(const e of analysis.confluence){
   const source=packet.sources.find(s=>s.id===e.sourceId),panel=e.panelId===null?null:analysis.panels?.find(p=>p.id===e.panelId&&p.sourceId===e.sourceId);
   if(!levels.some(l=>l.id===e.levelId)||!source||(e.panelId!==null&&!panel)||!families.some(f=>f.id===e.family)||!['supports','opposes','context','unavailable'].includes(e.effect)||!['observation','mechanism','watch'].every(k=>typeof e[k]==='string'&&e[k].trim()))throw Error('Invalid level confluence evidence.');
-  const key=[e.levelId,e.sourceId,e.panelId,e.family].join(':');if(keys.has(key))throw Error('Duplicate confluence evidence.');keys.add(key);
+  // One feed can support the immediate level and separately supply context or
+  // contrary evidence. Preserve those distinct effects; family counts still
+  // deduplicate the source views, and identical effects remain an error.
+  const key=[e.levelId,e.sourceId,e.panelId,e.family,e.effect].join(':');if(keys.has(key))throw Error('Duplicate confluence evidence.');keys.add(key);
   const restriction=evidenceConstraint(source,panel,packet);
   if(restriction){e.effect=restriction.effect;e.scopeNote=restriction.reason;}
  }
@@ -85,7 +88,7 @@ export function levelConfluence(read,level){
  }
  for(const id of level.sourceIds||[]){
   const source=read.sources.find(s=>s.id===id);if(!source||items.some(e=>e.sourceId===id))continue;
-  const panel=a.panels?.find(p=>level.panelIds?.includes(p.id)&&p.sourceId===id),family=familyFor(panel?.title||source.title)||'price',rule=evidenceConstraint(source,panel,read);
+  const panel=a.panels?.find(p=>level.panelIds?.includes(p.id)&&p.sourceId===id),family=id===level.apiOrigin?.sourceId&&/profile$/.test(level.apiOrigin.timeframe)?'acceptance':familyFor(panel?.title||source.title)||'price',rule=evidenceConstraint(source,panel,read);
   items.push({source,panel,sourceId:id,family,effect:rule?.effect||'supports',observation:level.identity?.derivation||level.evidence,mechanism:level.evidence,watch:level.watch,scopeNote:rule?.reason,origin:true});
  }
  // Coordinate overlap is useful for investigation, not a vote for direction.
