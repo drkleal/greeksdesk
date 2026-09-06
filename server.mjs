@@ -1,5 +1,6 @@
 import http from 'node:http';
 import {readBasis,BasisReadError} from './basis.mjs';
+import {validDate} from './public/session.mjs';
 import { readFile } from 'node:fs/promises';
 import { timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -40,7 +41,7 @@ export function createServer(password = process.env.DESK_PASSWORD) {
     }
     if(req.url==='/api/basis'){
       if(req.method!=='POST'||req.headers['x-greeksdesk-action']!=='manual-check'||req.headers['sec-fetch-site']==='cross-site'){res.writeHead(403);return res.end();}
-      try{let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>3100000){res.writeHead(413);return res.end();}}const input=JSON.parse(raw);if(!/^\d{4}-\d{2}-\d{2}$/.test(input.date))throw Error('Select a session date.');const spx=await checkProvider('quantdata',input.date);if(!spx.ok||!spx.latestPrice)throw Error('No matching SPX reference is available.');const result=await readBasis(input.image,spx,input.date);res.writeHead(200,{'Content-Type':'application/json'});return res.end(JSON.stringify(result));}catch(error){res.writeHead(400,{'Content-Type':'application/json'});return res.end(JSON.stringify({ok:false,message:error instanceof BasisReadError||error.message?.startsWith('No matching')?error.message:'Unable to establish a verified basis from this image. Include ES price, date and chart timezone.'}));}
+      try{let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>3100000){res.writeHead(413);return res.end();}}const input=JSON.parse(raw);if(!validDate(input.date))throw new BasisReadError('Select a valid session date before reading the ES screenshot.');const spx=await checkProvider('quantdata',input.date);if(!spx.ok||!spx.latestPrice)throw Error('No matching SPX reference is available.');const result=await readBasis(input.image,spx,input.date);res.writeHead(200,{'Content-Type':'application/json'});return res.end(JSON.stringify(result));}catch(error){res.writeHead(400,{'Content-Type':'application/json'});return res.end(JSON.stringify({ok:false,message:error instanceof BasisReadError||error.message?.startsWith('No matching')?error.message:'Unable to establish a verified basis from this image. Include ES price, date and chart timezone.'}));}
     }
     if (req.url === '/api/analyze') {
       if(req.method!=='POST'||req.headers['x-greeksdesk-action']!=='manual-check'||req.headers['sec-fetch-site']==='cross-site') {res.writeHead(403);return res.end('Same-origin action required');}
@@ -67,7 +68,7 @@ export function createServer(password = process.env.DESK_PASSWORD) {
       res.writeHead(405, { Allow: 'GET, HEAD' });
       return res.end();
     }
-    const scripts = {'/connector.mjs':'./public/connector.mjs','/desk.mjs':'./public/desk.mjs','/desk.css':'./public/desk.css','/map.mjs':'./public/map.mjs','/capture.mjs':'./public/capture.mjs','/exposure.js':'./public/exposure.js','/connections.mjs':'./public/connections.mjs','/update-loop.mjs':'./public/update-loop.mjs'};
+    const scripts = {'/session.mjs':'./public/session.mjs','/connector.mjs':'./public/connector.mjs','/desk.mjs':'./public/desk.mjs','/desk.css':'./public/desk.css','/map.mjs':'./public/map.mjs','/capture.mjs':'./public/capture.mjs','/exposure.js':'./public/exposure.js','/connections.mjs':'./public/connections.mjs','/update-loop.mjs':'./public/update-loop.mjs'};
     if (!['/', '/index.html', '/preview', '/connections', '/connector', '/chart-connector.zip', ...Object.keys(scripts)].includes(req.url)) {
       res.writeHead(404);
       return res.end('Not found');

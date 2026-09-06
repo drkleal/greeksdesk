@@ -25,6 +25,12 @@ test('missing password fails closed', async () => {
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
 
+test('basis rejects blank and impossible dates before contacting providers',async()=>{
+ const server=createServer('test-secret');await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ const base=`http://127.0.0.1:${server.address().port}`,headers={Authorization:'Basic '+Buffer.from('drkleal:test-secret').toString('base64'),'X-GreeksDesk-Action':'manual-check'};
+ try{for(const date of ['', '2026-02-30']){const response=await fetch(base+'/api/basis',{method:'POST',headers,body:JSON.stringify({date,image:'unused'})});assert.equal(response.status,400);assert.match((await response.json()).message,/Select a valid session date/);}const module=await fetch(base+'/session.mjs',{headers});assert.equal(module.status,200);assert.match(module.headers.get('content-type'),/javascript/);}finally{await new Promise(resolve=>server.close(resolve));}
+});
+
 
 test('new desk and analysis routes preserve authentication and reject cross-site analysis',async()=>{
  const server=createServer('test-secret');await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const base=`http://127.0.0.1:${server.address().port}`;
