@@ -10,7 +10,7 @@ The default map uses ES. Paste an original ES price chart to build native ES sce
 
 Share chart tab uses the browser's screen-sharing picker. While sharing is active, each data update captures the selected surface. Attach or paste PNG/JPEG/WebP images as an alternative. Source URLs open the original platform; a URL does not grant access to signed-in charts. Capture time is not market-data time. Up to four images per read are resized locally before analysis.
 
-Auto is OFF on page load. It runs every 5 or 10 minutes for a selected bounded session, while the page is visible and using today's New York date. Enable Gamma and/or analysis explicitly to include their costs. Auto stops after a failure, hidden page or session limit. This is a browser session, not a hosted background collector. It does not trade or send alerts.
+Auto is OFF on page load. It runs every 5 or 10 minutes for a selected bounded session, while the tab stays open and using today's New York date; switching to the trading platform does not turn it off. Background browser throttling or computer sleep can delay cycles. Enable Gamma and/or analysis explicitly to include their costs. Auto stops after a failure, page close/reload or session limit. The wall-clock deadline is checked before every request; delayed timers never catch up by issuing a burst of requests. Manual updates use the same loop and replace its pending timer. This is a browser session, not a hosted background collector. It does not trade or send alerts.
 
 Latest 20 reads, including selected chart images, are stored in this browser's IndexedDB on this device; download a read to retain a portable copy. No cross-device history is implemented.
 

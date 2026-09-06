@@ -22,3 +22,8 @@ test('manual update replaces waiting timer rather than leaving duplicate schedul
  let calls=0,next,cancelled=0;const loop=createUpdateLoop({run:async()=>{calls++;return true;},later:fn=>{next=fn;return 1;},cancel:()=>{next=undefined;cancelled++;}});
  loop.start({intervalMs:60000,maxCycles:4,durationMs:240000});await flush();await loop.once();assert.equal(calls,2);assert.equal(cancelled,1);assert.equal(typeof next,'function');loop.stop();
 });
+test('a background timer waking after the session deadline does not fetch or catch up',async()=>{
+ let clock=0,calls=0,next;const loop=createUpdateLoop({now:()=>clock,run:async()=>{calls++;return true;},later:fn=>{next=fn;return 1;}});
+ loop.start({intervalMs:60000,maxCycles:10,durationMs:600000});await flush();assert.equal(calls,1);
+ clock=900000;await next();await flush();assert.equal(calls,1);assert.equal(loop.status().active,false);
+});
