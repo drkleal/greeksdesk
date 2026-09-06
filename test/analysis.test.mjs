@@ -43,7 +43,7 @@ test('ES API references apply only the explicitly supplied basis',()=>{
 
 test('native ES mode never relabels SPX API references as ES',async()=>{
  const r=await createAnalyzer({env:{}})({date:'2026-09-04',instrument:'ES',basis:null,sources:[{id:'price',title:'SPX',sessionDate:'2026-09-04',data:{ticker:'SPX',latestPrice:7700}}]});assert.deepEqual(r.analysis.levels,[]);
- const native={...packet,instrument:'ES',basis:null};const nativePanel={...panel,instrument:'ES'};const level={id:'es-level',price:7725,label:'ES support',kind:'support',sourceIds:['gamma'],panelIds:['p1'],evidence:'Visible ES structure',watch:'Hold',invalidation:'Break'};
+ const native={...packet,instrument:'ES',basis:null};const nativePanel={...panel,instrument:'ES'};const level={id:'es-level',price:7725,label:'ES support',role:'structure',kind:'support',sourceIds:['gamma'],panelIds:['p1'],evidence:'Visible ES structure',watch:'Hold',invalidation:'Break'};
  assert.equal(validateAnalysis({...valid,panels:[nativePanel],levels:[level]},native).levels.length,1);
  assert.throws(()=>validateAnalysis({...valid,panels:[panel],levels:[level]},native));
  assert.throws(()=>validateAnalysis({...valid,panels:[nativePanel],levels:[{...level,panelIds:[]}]},native));
@@ -68,10 +68,17 @@ test('cropped ES metadata can use source-specific owner confirmation without a b
  const confirmedContext={instrument:'ES',sessionDate:packet.date,priceTime:'17:00',timezone:'America/New_York'};
  const native=validatePacket({...packet,instrument:'ES',basis:null,sources:[{...packet.sources[0],confirmedContext}]});
  const confirmedPanel={...panel,instrument:'ES',instrumentEvidence:'user_confirmed',instrumentLabel:'ES (chart owner)',dateEvidence:'user_confirmed'};
- const level={id:'es-retest',price:7716,label:'Visible ES retest',sourceIds:['gamma'],panelIds:['p1'],evidence:'Chart price; date and ES supplied by owner',watch:'Observe retest',invalidation:'Acceptance through the level'};
+ const level={id:'es-retest',price:7716,label:'Visible ES retest',role:'structure',sourceIds:['gamma'],panelIds:['p1'],evidence:'Chart price; date and ES supplied by owner',watch:'Observe retest',invalidation:'Acceptance through the level'};
  assert.equal(validateAnalysis({...valid,panels:[confirmedPanel],levels:[level]},native).levels[0].price,7716);
  assert.throws(()=>validateAnalysis({...valid,panels:[confirmedPanel]}, {...native,sources:[{...native.sources[0],confirmedContext:null}]}),/no user confirmation/);
  assert.throws(()=>validatePacket({...native,sources:[{...native.sources[0],confirmedContext:{...confirmedContext,sessionDate:'2026-09-03'}}]}));
  assert.throws(()=>validatePacket({...native,sources:[{...native.sources[0],image:undefined}]}),/requires an image/);
  assert.throws(()=>validateAnalysis({...valid,panels:[{...confirmedPanel,observedDate:'2026-09-08',dateEvidence:'visible'}]},native),/date mismatch/);
+});
+
+test('last-price and raw model references cannot become a structural trade setup',()=>{
+ const level={id:'quote',price:7715,label:'Last price',role:'last_price',kind:'reference',sourceIds:['gamma'],panelIds:['p1'],evidence:'Quote marker',watch:'Observe',invalidation:'Not structural'};
+ const result=validateAnalysis({...valid,gaps:[],panels:[panel],levels:[level],scenarios:valid.scenarios.map(s=>({...s,status:'conditional',triggerId:'quote',targetId:null}))},packet);
+ assert.ok(result.scenarios.every(s=>s.status==='insufficient'&&s.triggerId===null));
+ assert.equal(result.gaps.length,3);
 });
