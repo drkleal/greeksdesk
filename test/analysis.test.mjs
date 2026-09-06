@@ -82,3 +82,14 @@ test('last-price and raw model references cannot become a structural trade setup
  assert.ok(result.scenarios.every(s=>s.status==='insufficient'&&s.triggerId===null));
  assert.equal(result.gaps.length,3);
 });
+
+test('provider panel title and bounds come from captured layout rather than model guesses',()=>{
+ const captured={id:'panel-2',title:'Vanna',complete:true,region:{x:.01,y:.5,width:.48,height:.45}};
+ const input=validatePacket({...packet,sources:[{...packet.sources[0],capturedPanels:[captured]}]});
+ const output=validateAnalysis({...valid,panels:[{...panel,capturedPanelId:'panel-2',title:'Guessed title'}]},input);
+ assert.equal(output.panels[0].title,'Vanna');assert.deepEqual(output.panels[0].region,captured.region);assert.equal(output.panels[0].locationVerified,true);
+ assert.throws(()=>validateAnalysis({...valid,panels:[{...panel,capturedPanelId:'panel-9'}]},input),/does not match/);
+ assert.throws(()=>validatePacket({...packet,sources:[{...packet.sources[0],capturedPanels:[{...captured,region:{x:.9,y:0,width:.5,height:1}}]}]}),/bounds/);
+ const legacy=validateAnalysis({...valid,panels:[{...panel,region:{x:.1,y:.1,width:.5,height:.5}}]},packet);
+ assert.deepEqual(legacy.panels[0].region,{x:0,y:0,width:1,height:1});assert.equal(legacy.panels[0].locationVerified,false);
+});

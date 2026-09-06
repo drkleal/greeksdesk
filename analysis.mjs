@@ -6,9 +6,17 @@ const arr=items=>({type:'array',items});
 const instruments=['ES','SPX','SPY','NQ','QQQ','other','unknown'];
 const instrumentEvidence=['contract_header','price_axis','underlying_selector','user_confirmed','exposure_units_only','unknown'];
 const dateRoles=['observed_session','projected_session','unknown'];
+function capturedPanelList(items){
+ if(!Array.isArray(items)||items.length>16)throw Error('Invalid captured panel list.');
+ const ids=new Set();return items.map(p=>{
+  const r=p?.region;
+  if(!p||!/^panel-\d{1,2}$/.test(p.id)||ids.has(p.id)||typeof p.title!=='string'||!p.title.trim()||p.title.length>100||typeof p.complete!=='boolean'||!r||![r.x,r.y,r.width,r.height].every(Number.isFinite)||r.x<0||r.y<0||r.width<=0||r.height<=0||r.x+r.width>1.001||r.y+r.height>1.001)throw Error('Invalid captured panel bounds.');
+  ids.add(p.id);return {id:p.id,title:p.title,complete:p.complete,region:{x:r.x,y:r.y,width:r.width,height:r.height}};
+ });
+}
 export const analysisSchema=obj({
  headline:str, summary:str, gaps:arr(str), changes:arr(str),
- panels:arr(obj({id:str,sourceId:str,title:str,instrument:{type:'string',enum:instruments},instrumentEvidence:{type:'string',enum:instrumentEvidence},instrumentLabel:str,metricUnits:str,observedDate:str,dateEvidence:{type:'string',enum:['visible','user_confirmed','unknown']},dateRole:{type:'string',enum:dateRoles},status:{type:"string",enum:["usable","context","excluded"]},reason:str,shows:str,region:obj({x:{type:"number"},y:{type:"number"},width:{type:"number"},height:{type:"number"}})})),
+ panels:arr(obj({id:str,sourceId:str,capturedPanelId:{type:['string','null']},title:str,instrument:{type:'string',enum:instruments},instrumentEvidence:{type:'string',enum:instrumentEvidence},instrumentLabel:str,metricUnits:str,observedDate:str,dateEvidence:{type:'string',enum:['visible','user_confirmed','unknown']},dateRole:{type:'string',enum:dateRoles},status:{type:"string",enum:["usable","context","excluded"]},reason:str,shows:str,region:obj({x:{type:"number"},y:{type:"number"},width:{type:"number"},height:{type:"number"}})})),
  levels:arr(obj({id:str,price:{type:'number'},label:str,role:{type:'string',enum:['structure','last_price','model_reference']},kind:{type:'string',enum:['support','resistance','gamma','reference','other']},sourceIds:arr(str),panelIds:arr(str),evidence:str,watch:str,invalidation:str})),
  scenarios:arr(obj({direction:{type:'string',enum:['up','down','neutral']},status:{type:'string',enum:['conditional','insufficient']},triggerId:{type:['string','null']},targetId:{type:['string','null']},condition:str,confirmation:str,invalidation:str})),
  sources:arr(obj({id:str,shows:str,importance:str,lookFor:str}))
@@ -28,7 +36,9 @@ export function validatePacket(input){
   if(confirmedContext&&!image)throw Error('Chart confirmation requires an image.');
   const data=s.data??null;
   if(JSON.stringify(data).length>200000)throw Error('Source data is too large.');
-  return {id:s.id,title:s.title,sessionDate:s.sessionDate,capturedAt:typeof s.capturedAt==='string'?s.capturedAt:null,data,...(image?{image}:{}),...(confirmedContext?{confirmedContext}:{})};
+  const capturedPanels=s.capturedPanels===undefined?undefined:capturedPanelList(s.capturedPanels);
+  if(capturedPanels&&!image)throw Error('Panel locations require their captured image.');
+  return {id:s.id,title:s.title,sessionDate:s.sessionDate,capturedAt:typeof s.capturedAt==='string'?s.capturedAt:null,data,...(image?{image}:{}),...(confirmedContext?{confirmedContext}:{}),...(capturedPanels?{capturedPanels}:{})};
  });
  if(!sources.length)throw Error('Update data or attach a chart first.');
  return {date:input.date,instrument:input.instrument,basis:input.instrument==='ES'?input.basis:0,sources,previous:typeof input.previous==='string'?input.previous.slice(0,4000):''};
@@ -40,6 +50,15 @@ export function validateAnalysis(value,packet){
  for(const p of panels){const source=packet.sources.find(s=>s.id===p.sourceId);if(!source?.image||typeof p.id!=='string'||panelIds.has(p.id)||!['title','instrument','observedDate','reason','shows'].every(k=>typeof p[k]==='string')||!['usable','context','excluded'].includes(p.status))throw Error('Invalid panel evidence.');panelIds.add(p.id);const r=p.region;if(!r||![r.x,r.y,r.width,r.height].every(Number.isFinite)||r.x<0||r.y<0||r.width<=0||r.height<=0||r.x+r.width>1.001||r.y+r.height>1.001)throw Error('Invalid panel bounds.');if(p.status==='usable'&&(p.observedDate!==packet.date||!(packet.instrument==='ES'&&packet.basis===null?['ES']:['SPX',packet.instrument]).includes(p.instrument)))throw Error('Panel instrument or date mismatch.');}
 
  for(const p of panels){
+  const source=packet.sources.find(s=>s.id===p.sourceId);
+  if(source.capturedPanels?.length){
+   const captured=source.capturedPanels.find(c=>c.id===p.capturedPanelId);
+   if(!captured)throw Error('Analysis panel does not match a captured provider panel.');
+   p.title=captured.title;p.region={...captured.region};p.locationVerified=true;p.captureComplete=captured.complete;
+  }else{
+   // Full source view is safer than a visually guessed crop of an adjacent panel.
+   p.region={x:0,y:0,width:1,height:1};p.locationVerified=false;
+  }
   const context=packet.sources.find(s=>s.id===p.sourceId)?.confirmedContext;
   if(!['visible','user_confirmed','unknown'].includes(p.dateEvidence))throw Error('Missing panel date evidence.');
   if(p.dateEvidence==='user_confirmed'&&(!context||context.sessionDate!==p.observedDate))throw Error('Panel date has no user confirmation.');
@@ -108,7 +127,7 @@ Assign every level a role: structure for a visible support/resistance/retest/ran
 
 Use native ES chart coordinates when instrument is ES and basis is null. A pasted ES chart can support native ES structure after hours without a basis. SPX APIs and panels remain useful explanatory context, but may be translated to ES ONLY with the explicitly supplied basis; show that conversion and its historical time limitation. Never subtract later ES from frozen SPX and call it synchronized. Never use SPY x10, QQQ conversions or related-instrument prices as ES levels. Do not convert a value twice. Two related exposure providers are not independent confirmation.
 
-Identify up to eight relevant visible panels, each with a unique id, sourceId and normalized image region including its axes/title. Do not invent or recreate unseen panels. Read the PRICE instrument from an actual contract/header/price axis or selected underlying. Quote that identifier in instrumentLabel and record instrumentEvidence. Metric/hedging units are separate: OptionsDepth underlying SPX with Gamma measured in ES futures/point is SPX price coordinates, not an ES chart. Exposure-units-only identification is excluded. An original chart's source confirmedContext is an explicit owner statement supplying cropped ES/date metadata; use instrumentEvidence/dateEvidence user_confirmed and state that provenance. Numeric prices still must come from the readable original image. Do not override a conflicting visible date/instrument or turn an exposure chart, GreeksDesk page, or nested thumbnail into native ES evidence. Without visible or owner-confirmed date return unknown and exclude it as numeric evidence. Assigned source sessionDate alone is not proof of observation date. Contract month can remain unknown when the owner confirms ES.
+Identify up to eight relevant visible panels, each with a unique id and sourceId. When a source has capturedPanels, these are browser-measured panel titles and image regions. Select its exact capturedPanelId and title; do not guess coordinates or swap neighboring panels. Use its region verbatim, and mention when complete=false means only part was visible. When there is no capturedPanels list use capturedPanelId null and the full-image region. Do not invent or recreate unseen panels. Read the PRICE instrument from an actual contract/header/price axis or selected underlying. Quote that identifier in instrumentLabel and record instrumentEvidence. Metric/hedging units are separate: OptionsDepth underlying SPX with Gamma measured in ES futures/point is SPX price coordinates, not an ES chart. Exposure-units-only identification is excluded. An original chart's source confirmedContext is an explicit owner statement supplying cropped ES/date metadata; use instrumentEvidence/dateEvidence user_confirmed and state that provenance. Numeric prices still must come from the readable original image. Do not override a conflicting visible date/instrument or turn an exposure chart, GreeksDesk page, or nested thumbnail into native ES evidence. Without visible or owner-confirmed date return unknown and exclude it as numeric evidence. Assigned source sessionDate alone is not proof of observation date. Contract month can remain unknown when the owner confirms ES.
 
 Separate observed session dates, capture time, model time and expiration dates. OptionsDepth can roll forward after close: a Sep 8 forward model viewed after Sep 4 close is next-session planning context, not necessarily stale/wrong. Retain its displayed target date with dateRole projected_session, status context, and explain what it may help monitor next session. Never treat it as already observed price action or same-session ES confirmation. A usable panel must have legible matching visible/confirmed session and valid price instrument. Related instruments and forward models are context; unreadable or truly conflicting panels are excluded. For image-derived numeric levels cite usable panelIds with matching sourceIds and concrete location/evidence. API levels can have no panelId, but remain model_reference unless separate usable price structure establishes them.
 

@@ -1,3 +1,4 @@
+import {capturePanelLayout} from './panels.mjs';
 export function isChart(url){try{const u=new URL(url);if(u.protocol!=='https:'||u.username||u.password)return false;return (u.hostname==='v3.quantdata.us'&&(u.pathname==='/'||u.pathname.startsWith('/page/')))||(u.hostname==='app.optionsdepth.com'&&['/dashboard','/market-makers','/positional-insight','/depth-view','/iv-depth'].includes(u.pathname.replace(/\/$/,'')));}catch{return false;}}
 export function isDesk(url){try{const u=new URL(url);return u.protocol==='https:'&&!u.username&&!u.password&&['greeksdesk.drklealtrades.com','greeksdesk.fly.dev'].includes(u.hostname)&&['/','/index.html'].includes(u.pathname);}catch{return false;}}
 export async function captureTab(api,id){
@@ -5,9 +6,12 @@ export async function captureTab(api,id){
  const target={tabId:id};let attached=false;
  try{
   await api.debugger.attach(target,'1.3');attached=true;
+  const layout=await capturePanelLayout(api,target);
   const shot=await api.debugger.sendCommand(target,'Page.captureScreenshot',{format:'jpeg',quality:80,fromSurface:true,captureBeyondViewport:false});
+  const finalLayout=await capturePanelLayout(api,target);
+  if(JSON.stringify(layout)!==JSON.stringify(finalLayout))throw Error('Chart layout moved during capture. Let the panels settle, then update again.');
   const after=await api.tabs.get(id);if(!isChart(after.url)||after.url!==before.url||after.status==='loading')throw Error('Chart navigated during capture. Try updating after it finishes.');
   if(typeof shot?.data!=='string'||shot.data.length>6000000)throw Error('Chart image is too large. Reduce the chart window size.');
-  return {id:'connected-'+id,title:(after.title||'Connected chart').slice(0,100),url:after.url,capturedAt:new Date().toISOString(),image:'data:image/jpeg;base64,'+shot.data};
+  return {id:'connected-'+id,title:(after.title||'Connected chart').slice(0,100),url:after.url,capturedAt:new Date().toISOString(),image:'data:image/jpeg;base64,'+shot.data,capturedPanels:layout.panels};
  }finally{if(attached)await api.debugger.detach(target).catch(()=>{});}
 }
