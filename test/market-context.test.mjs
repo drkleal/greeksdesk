@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {exposureSnapshot,intervalPath,darkPoolLevels,createMarketContext} from '../market-context.mjs';
 import {evidenceCoverage} from '../public/evidence.mjs';
-import {pathDirectionValid,levelDetails,decisionZones,setupRoom,quoteStatus} from '../public/plan.mjs';
+import {pathDirectionValid,levelDetails,decisionZones,setupRoom,quoteStatus,scenarioRoute} from '../public/plan.mjs';
 test('Quant Data documented omitted legs are zero and participate in strike ranks',()=>{
  const r=exposureSnapshot({data:{SPX:{stockPrice:7717,exposureMap:{'2026-09-04':{'7715':{callExposure:200,putExposure:-50},'7720':{callExposure:999}},'2026-09-11':{'7715':{callExposure:80,putExposure:-10}}}}}});
  assert.equal(r.strongest.length,2);assert.equal(r.strongest[0].net,999);assert.equal(r.strongest[1].net,220);assert.equal(r.incompleteLegPairs,0);assert.equal(r.omittedZeroLegs,1);assert.equal(r.strikeCount,2);assert.equal(r.nearby.length,2);
@@ -28,6 +28,18 @@ test('path checks include off-map reactions, both directions, and obstacles with
  assert.equal(down.points,5);assert.equal(down.obstacles[0].id,'near');assert.equal(down.eligible,false);
  assert.equal(setupRoom(up,levels,5,[]).eligible,true);
  assert.equal(setupRoom(up,levels,5,null).eligible,false); // Archived read without this review.
+});
+test('the first reaction does not cap the broader conditional span, and intermediate checks remain visible',()=>{
+ const levels=[{id:'start',price:7716,role:'structure'},{id:'first',price:7719.25,role:'structure'},{id:'shelf',price:7722.75,role:'structure'},{id:'outer',price:7740,role:'structure'}];
+ const s={status:'conditional',direction:'up',triggerId:'start',targetId:'first',continuation:{targetId:'outer',condition:'Only after first objective acceptance',confirmation:'Acceptance through intervening shelves',invalidation:'Loss of reclaimed structure',rationale:'Earlier session reaction'}};
+ const route=scenarioRoute(s,levels,[{id:'micro',price:7717,role:'structure'}]);
+ assert.equal(route.first.firstPoints,1);assert.equal(route.first.points,3.25);
+ assert.equal(route.totalPoints,24);assert.equal(route.stages[1].points,20.75);assert.equal(route.hasContinuation,true);
+ assert.deepEqual(route.stages[1].checks.map(l=>l.id),['shelf']);
+ assert.equal(scenarioRoute({...s,continuation:{...s.continuation,confirmation:''}},levels,[]).hasContinuation,false);
+ assert.equal(scenarioRoute({...s,continuation:{...s.continuation,targetId:'start'}},levels,[]).hasContinuation,false);
+ assert.equal(scenarioRoute(s,levels.map(l=>l.id==='outer'?{...l,role:'last_price'}:l),[]).hasContinuation,false);
+ assert.equal(scenarioRoute(s,levels,undefined).ready,false);
 });
 
 test('explicit null and malformed exposure remain unknown, not documented zeros',()=>{

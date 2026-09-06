@@ -2,6 +2,18 @@ import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {validDate,nyTime,isCashObservation,cashSession} from './public/session.mjs';
 
+// Preserve the whole observed session at broader resolutions without another API request.
+export function aggregateESBars(bars,minutes){
+ const groups=new Map(),duration=minutes*60000;
+ for(const b of bars){
+  const start=Math.floor(Date.parse(b.timestamp)/duration)*duration;
+  let g=groups.get(start);
+  if(!g){g={timestamp:new Date(start).toISOString(),end:new Date(start+duration).toISOString(),observedThrough:b.end,open:b.open,high:b.high,low:b.low,close:b.close,volume:0,minuteCount:0,complete:false};groups.set(start,g);}
+  g.high=Math.max(g.high,b.high);g.low=Math.min(g.low,b.low);g.close=b.close;g.volume+=b.volume;g.minuteCount++;g.observedThrough=b.end;g.complete=g.minuteCount===minutes;
+ }
+ return [...groups.values()];
+}
+
 export function summarizeES(raw,now=Date.now()){
  if(!raw.ok)return raw;
  if(!/^ES[HMUZ]\d{1,2}$/.test(raw.contract)||raw.dataset!=='GLBX.MDP3'||!validDate(raw.sessionDate)||!Array.isArray(raw.bars)||raw.bars.length>1500)throw Error('Invalid ES response');
@@ -24,6 +36,8 @@ export function summarizeES(raw,now=Date.now()){
   latestPrice:latest?.price??null,latestTimestamp:latest?.timestamp??null,priceKind:latest?.kind??null,
   freshness:q&&latest===q&&age>=0&&age<=20?'fresh':nyTime(now)?.date===raw.sessionDate?'stale':'historical',ageSeconds:age,
   session:stats(bars),cashSession:stats(cash),recentBars:bars.slice(-120),averageTrueRange1m:ranges.length===14?ranges.reduce((n,x)=>n+x,0)/14:null,
+  structureVersion:1,bars5m:aggregateESBars(bars,5),bars15m:aggregateESBars(bars,15),
+  structureScope:'Full observed futures session in 5-minute and 15-minute bars; last 120 one-minute bars for local timing. Aggregate OHLCV uses only returned minute records. complete=false means not every minute slot is represented; observedThrough is the last supplied minute end. Session range describes past movement, not a forecast.',
   priceObservations:bars.map(b=>({price:b.close,timestamp:b.end})),messages:raw.messages||[],estimatedHistoryCostUSD:raw.estimatedHistoryCostUSD,
   limitation:'Unadjusted '+raw.contract+' prices. Session window: prior 18:00–17:00 New York. Bars describe observed prices, not exchange settlement. Completed bar closes have interval-end timestamps; no exact trade-time claim. A fresh price does not refresh an older scenario.'};
 }

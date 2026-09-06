@@ -77,6 +77,23 @@ test('off-map checkpoints require the same price, source and identity evidence a
  const chart={...packet,instrument:'ES',basis:null};
  assert.throws(()=>validateAnalysis({...structuredClone(valid),panels:[{...panel,instrument:'ES',status:'context'}],checkpoints:[{...checkpoint,sourceIds:['gamma'],panelIds:['p1']}]},chart),/native ES/);
 });
+test('broader objectives require real earlier-session prices and directional acceptance conditions',()=>{
+ const input={date:'2026-09-04',instrument:'ES',basis:null,sources:[{id:'databento',title:'ESU6',sessionDate:'2026-09-04',data:{available:true,ticker:'ES',dataset:'GLBX.MDP3',contract:'ESU6',recentBars:[{open:7716,high:7719.25,low:7715,close:7717.75}],bars15m:[{open:7739,high:7740,low:7730,close:7731}]}}]};
+ const level=(id,price)=>({id,price,label:id,role:'structure',kind:'resistance',sourceIds:['databento'],panelIds:[],evidence:'Observed ES price reaction',watch:'Retest',invalidation:'Failure'});
+ const continuation={targetId:'outer',condition:'After acceptance above the first objective',confirmation:'Hold reclaimed levels',invalidation:'Loss of that acceptance',rationale:'Earlier-session 15-minute reaction'};
+ const run=(c=continuation)=>validateAnalysis({...structuredClone(valid),checkpoints:[],levels:[level('trigger',7716),level('first',7719.25),level('outer',7740)],scenarios:valid.scenarios.map(s=>({...s,...(s.direction==='up'?{status:'conditional',triggerId:'trigger',targetId:'first',continuation:c}:{})}))},input);
+ assert.equal(run().scenarios[0].continuation.targetId,'outer');
+ assert.equal(run({...continuation,targetId:'trigger'}).scenarios[0].continuation.targetId,null);
+ assert.equal(run({...continuation,confirmation:''}).scenarios[0].continuation.targetId,null);
+ assert.throws(()=>validateAnalysis({...structuredClone(valid),levels:[level('invented',7799)]},input),/native ES/);
+ assert.equal(run({...continuation,targetId:'missing'}).scenarios[0].status,'conditional'); // Only the invalid continuation is withheld.
+});
+test('repeated full-session reads compare prior ES snapshots without resending old bar arrays to the analyst',()=>{
+ const data={ticker:'ES',contract:'ESU6',latestPrice:7715,latestTimestamp:'2026-09-04T21:00:00Z',session:{high:7764.5,low:7711.75},bars5m:Array(300).fill({evidence:'x'.repeat(400)}),bars15m:[{}],recentBars:[{}]};
+ const normalized=validatePacket({...packet,previousEvidence:{date:packet.date,checkedAt:'2026-09-06T14:00:00Z',sources:[{id:'databento',data}]}}).previousEvidence.sources[0].data;
+ assert.equal(normalized.latestPrice,7715);assert.equal(normalized.session.high,7764.5);assert.equal(normalized.bars5m,undefined);assert.equal(normalized.recentBars,undefined);
+ assert.equal(data.bars5m.length,300);
+});
 
 test('exposure measured in ES futures is not an ES price coordinate',()=>{
  const native={...packet,instrument:'ES',basis:null};

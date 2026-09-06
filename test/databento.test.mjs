@@ -29,3 +29,27 @@ test('unconfigured Databento makes no request and historical samples are cached'
  await read('2026-09-04');assert.equal((await read('2026-09-04')).cached,true);assert.equal(calls,1);
  await assert.rejects(()=>read('2026-09-04','NQ.v.0'));
 });
+test('broader bars preserve early-session structure excluded from the minute timing window',()=>{
+ const raw=sample();raw.bars=Array.from({length:150},(_,i)=>makeBar(new Date(Date.parse('2026-09-04T13:30:00Z')+i*60000).toISOString()));
+ raw.bars[0].high=7751;raw.bars[0].open=7749;
+ const r=summarizeES(raw,Date.parse('2026-09-06T12:00:00Z'));
+ assert.equal(r.recentBars.length,120);assert.ok(r.recentBars.every(b=>b.high<7751));
+ assert.equal(r.bars5m.length,30);assert.equal(r.bars15m.length,10);
+ assert.equal(r.bars5m[0].open,7749);assert.equal(r.bars15m[0].high,7751);
+ assert.equal(r.bars15m[0].close,7716);assert.equal(r.bars15m[0].volume,750);
+ assert.equal(r.bars5m.reduce((n,b)=>n+b.volume,0),r.session.volume);
+ assert.ok(r.bars15m.every(b=>b.complete));assert.equal(r.bars5m.at(-1).observedThrough,r.latestTimestamp);
+});
+test('partial aggregate bars retain actual coverage times and do not fill absent minute records',()=>{
+ const raw=sample();raw.bars=[makeBar('2026-09-04T13:30:00Z'),makeBar('2026-09-04T13:32:00Z'),makeBar('2026-09-04T13:36:00Z')];
+ const r=summarizeES(raw,Date.parse('2026-09-06T12:00:00Z'));
+ assert.equal(r.bars5m.length,2);assert.equal(r.bars5m[0].complete,false);assert.equal(r.bars5m[0].minuteCount,2);
+ assert.equal(r.bars5m[0].end,'2026-09-04T13:35:00.000Z');assert.equal(r.bars5m[0].observedThrough,'2026-09-04T13:33:00.000Z');
+ assert.equal(r.bars15m[0].minuteCount,3);assert.equal(r.bars15m[0].volume,150);assert.equal(r.bars15m[0].complete,false);
+});
+test('a full futures-session analysis payload stays within the source-size budget',()=>{
+ const raw=sample();raw.bars=Array.from({length:1380},(_,i)=>makeBar(new Date(Date.parse('2026-09-03T22:00:00Z')+i*60000).toISOString()));
+ const {priceObservations,...data}=summarizeES(raw,Date.parse('2026-09-06T12:00:00Z'));
+ assert.equal(data.bars5m.length,276);assert.equal(data.bars15m.length,92);
+ assert.ok(JSON.stringify(data).length<200000);
+});

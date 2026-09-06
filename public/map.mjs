@@ -1,4 +1,4 @@
-import {levelColors,levelDetails,priceText,pathDirectionValid,directionTitle,decisionZones,setupRoom} from './plan.mjs';
+import {levelColors,levelDetails,priceText,pathDirectionValid,directionTitle,decisionZones,scenarioRoute} from './plan.mjs';
 export const node=(tag,text,cls)=>{const el=document.createElement(tag);if(text!==undefined)el.textContent=text;if(cls)el.className=cls;return el;};
 const svgNode=(tag,attrs={})=>{const el=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [k,v]of Object.entries(attrs))el.setAttribute(k,String(v));return el;};
 // Labels have their own collision-free positions. Price lines keep the linear scale.
@@ -33,14 +33,21 @@ export function renderMap(host,analysis,instrument,onSelect,onScenario=()=>{}){
   g.addEventListener('click',()=>onSelect(l));g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();onSelect(l);}});svg.append(g);
  }
  for(const s of analysis.scenarios){
-  if(s.status!=='conditional'||!pathDirectionValid(s,levels)||!setupRoom(s,levels,5,analysis.checkpoints??null).eligible||y(s.triggerId)===y(s.targetId))continue;
-  const lane=s.direction==='up'?245:s.direction==='down'?405:555,start=y(s.triggerId),end=s.targetId?y(s.targetId):start+(s.direction==='up'?-42:42),color=s.direction==='up'?'#36ffb1':s.direction==='down'?'#ff4f85':'#ffe85c';
-  const g=svgNode('g',{role:'button',tabindex:0,'aria-label':directionTitle(s.direction)+' conditional path: '+s.condition});
-  const path=`M ${lane} ${start} L ${lane+28} ${start+(end-start)*.28} L ${lane+28} ${end}`;
-  g.append(svgNode('path',{d:path,fill:'none',stroke:'transparent','stroke-width':26}));
-  g.append(svgNode('path',{d:path,fill:'none',stroke:color,'stroke-width':4,'stroke-dasharray':'9 5','marker-end':'url(#arrow-'+s.direction+')',...(s.direction==='neutral'?{'marker-start':'url(#arrow-neutral)'}:{})}));
-  const title=svgNode('title');title.textContent=s.condition+' '+(s.rationale||'');g.append(title);
-  g.addEventListener('click',()=>onScenario(s));g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();onScenario(s);}});svg.append(g);
+  const route=scenarioRoute(s,levels,analysis.checkpoints);
+  if(!route.ready)continue;
+  for(const stage of route.stages){
+   const start=y(stage.from.id),end=y(stage.to.id);if(start===end)continue;
+   const lane=s.direction==='up'?245:s.direction==='down'?405:555,color=s.direction==='up'?'#36ffb1':s.direction==='down'?'#ff4f85':'#ffe85c',later=stage.phase==='continuation';
+   const explanation=later?s.continuation.condition:s.condition;
+   const g=svgNode('g',{role:'button',tabindex:0,'aria-label':directionTitle(s.direction)+(later?' continuation only after acceptance: ':' first conditional test: ')+explanation});
+   const path=`M ${lane} ${start} L ${lane+28} ${start+(end-start)*.28} L ${lane+28} ${end}`;
+   g.append(svgNode('path',{d:path,fill:'none',stroke:'transparent','stroke-width':26}));
+   g.append(svgNode('path',{d:path,fill:'none',stroke:color,'stroke-width':later?3:4,'stroke-dasharray':later?'3 7':'9 5','marker-end':'url(#arrow-'+s.direction+')',...(s.direction==='neutral'?{'marker-start':'url(#arrow-neutral)'}:{})}));
+   const title=svgNode('title');title.textContent=explanation+' Checkpoints: '+stage.checks.map(l=>priceText(l.price)).join(', ');g.append(title);
+   const label=svgNode('text',{x:lane+35,y:(start+end)/2-8,style:'fill:'+color+';font-size:11px'});label.textContent=later?'If accepted':s.direction==='neutral'?'Range':'First test';g.append(label);
+   for(const l of stage.checks){const py=start+(end-start)*(l.price-stage.from.price)/(stage.to.price-stage.from.price);const dot=svgNode('circle',{cx:lane+28,cy:py,r:4,fill:'#ffe85c',stroke:'#001927','stroke-width':2});g.append(dot);}
+   g.addEventListener('click',()=>onScenario(s));g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();onScenario(s);}});svg.append(g);
+  }
  }
  for(const [x,text,color]of [[200,'↑ Upside','#36ffb1'],[370,'↓ Downside','#ff4f85'],[525,'↔ Neutral','#ffe85c']]){const label=svgNode('text',{x,y:height-30,style:'fill:'+color});label.textContent=text;svg.append(label);}
  host.append(svg);

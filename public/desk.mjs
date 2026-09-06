@@ -4,7 +4,7 @@ import {createUpdateLoop} from './update-loop.mjs';
 import {startChartShare,resizeChart,listReads,saveRead,loadESDraft,saveESDraft,chartImageBlob} from './capture.mjs';
 import {node,renderMap,sourceLink} from './map.mjs';
 import {renderEvidence,showEvidenceTab,focusEvidence} from './evidence.mjs';
-import {levelDetails,priceText,directionTitle,setupRoom,quoteStatus} from './plan.mjs';
+import {levelDetails,priceText,directionTitle,scenarioRoute,quoteStatus} from './plan.mjs';
 import {today,initialSession,validDate} from './session.mjs';
 const $=id=>document.getElementById(id);
 let savedSession;try{savedSession=JSON.parse(localStorage.getItem('greeksdesk-session'));}catch{}
@@ -64,15 +64,34 @@ async function updateData(){
 }
 function explain(level){showEvidenceTab('levels');for(const b of document.querySelectorAll('[data-level-id]'))b.classList.toggle('selected',b.dataset.levelId===level.id);const identity=levelDetails(level,read.result.analysis);$('explanation-title').textContent=identity.name+' · '+level.price.toLocaleString()+' '+read.instrument;const host=$('explanation-body');host.replaceChildren();host.append(node('strong',identity.badge),node('p',identity.description),...(identity.sourceLabel?[node('p','Source name: '+identity.sourceLabel)]:[]),node('h3','How this level was identified'),node('p',identity.derivation));host.append(node('p',({structure:'Source: price structure',last_price:'Source: last observed quote',model_reference:'Source: model reference'})[level.role]||'Source evidence','eyebrow'),node('p',level.evidence),node('h3','Watch next'),node('p',level.watch),node('h3','What would weaken this interpretation?'),node('p',level.invalidation));for(const panelId of level.panelIds||[]){const p=read.result.analysis.panels?.find(p=>p.id===panelId);if(p)host.append(panelButton(p));}for(const id of level.sourceIds){const source=read.sources.find(s=>s.id===id);if(!source)continue;host.append(node('h3',source.title));const explanation=read.result.analysis.sources.find(s=>s.id===id);if(explanation){host.append(node('p',explanation.shows),node('p','Look for: '+explanation.lookFor));}if(source.image){const img=node('img',undefined,'evidence-image');img.src=source.image;img.alt=source.title;host.append(img,chartButton(source));}const a=sourceLink(source.url);if(a)host.append(a);} $('explanation').scrollIntoView({behavior:'smooth',block:'nearest'});}
 function selectScenario(s){const card=$('scenario-'+s.direction);for(const c of document.querySelectorAll('.scenario'))c.classList.toggle('selected',c===card);card?.focus({preventScroll:true});card?.scrollIntoView({behavior:'smooth',block:'nearest'});}
-function renderRead(){enforceEvidenceScope(read.result.analysis,read);compactES(true);$('data-session').textContent=read.date;$('data-freshness').textContent=read.date===today()?'Check each source observation time below.':'Historical session · not current market data';showPrice(read.sources,read.sources,read.instrument);renderPanels();const a=read.result.analysis;$('map-basis').textContent=read.instrument==='ES'?(Number.isFinite(read.basis)?'Basis used for this read: ES − SPX = '+read.basis+' points.':'Native ES levels · no ES–SPX conversion applied.'):'SPX coordinates';$('headline').textContent=a.headline;$('summary').textContent=a.summary;$('map-unit').textContent=read.instrument;$('read-state').textContent=read.date===today()?'Conditional read':'Historical read';$('read-time').textContent='Analyzed '+new Date(read.result.checkedAt).toLocaleString();renderMap($('map'),a,read.instrument,explain,selectScenario);$('level-list').replaceChildren();
+function renderSessionStructure(record){
+ const host=$('session-structure');host.replaceChildren();const d=record.sources.find(s=>s.id==='databento'&&s.data?.available)?.data;
+ if(record.instrument!=='ES'||!d?.session)return;
+ host.append(node('strong','Full-session context · '+d.contract));
+ for(const [label,stats]of [['Futures session',d.session],['Cash session',d.cashSession]])if(stats&&Number.isFinite(stats.high)&&Number.isFinite(stats.low))host.append(node('p',label+': '+priceText(stats.low)+'–'+priceText(stats.high)+' · '+priceText(stats.high-stats.low)+' points already observed'));
+ host.append(node('small',d.structureVersion===1?'Full-session 5-minute / 15-minute structure + recent 1-minute timing. Historical range is not a projected move.':'This saved read has session extrema and recent minute bars. Update & analyze adds the broader session path.'));
+}
+function renderRead(){enforceEvidenceScope(read.result.analysis,read);compactES(true);$('data-session').textContent=read.date;$('data-freshness').textContent=read.date===today()?'Check each source observation time below.':'Historical session · not current market data';showPrice(read.sources,read.sources,read.instrument);renderPanels();const a=read.result.analysis;$('map-basis').textContent=read.instrument==='ES'?(Number.isFinite(read.basis)?'Basis used for this read: ES − SPX = '+read.basis+' points.':'Native ES levels · no ES–SPX conversion applied.'):'SPX coordinates';renderSessionStructure(read);$('headline').textContent=a.headline;$('summary').textContent=a.summary;$('map-unit').textContent=read.instrument;$('read-state').textContent=read.date===today()?'Conditional read':'Historical read';$('read-time').textContent='Analyzed '+new Date(read.result.checkedAt).toLocaleString();renderMap($('map'),a,read.instrument,explain,selectScenario);$('level-list').replaceChildren();
  $('scenarios').replaceChildren();for(const s of a.scenarios){
   const card=node('div',undefined,'scenario '+s.direction);card.id='scenario-'+s.direction;card.tabIndex=-1;
-  const room=setupRoom(s,a.levels,5,a.checkpoints??null);
-  card.append(node('strong',directionTitle(s.direction)),node('p',room.text,'setup-room'),node('p',s.status==='insufficient'?'Not established · '+s.condition:s.condition));
+  const route=scenarioRoute(s,a.levels,a.checkpoints);
+  card.append(node('strong',directionTitle(s.direction)));
+  if(route.ready){
+   const first=route.first;
+   card.append(node('p',s.direction==='neutral'?'Observed range boundaries · '+priceText(first.points)+' points':'First reaction · '+priceText(first.nearest.price)+' '+read.instrument+' · '+priceText(first.firstPoints)+' points from the trigger','first-reaction'));
+  }else card.append(node('p',route.reason,'setup-room'));
+  card.append(node('p',s.status==='insufficient'?'Not established · '+s.condition:s.condition));
   if(s.rationale)card.append(node('p',s.rationale,'scenario-reason'));
   card.append(node('p','Confirmation: '+s.confirmation),node('p','Invalidation: '+s.invalidation));
-  for(const id of [s.triggerId,s.targetId]){const l=a.levels.find(l=>l.id===id);if(l){const b=node('button',(id===s.triggerId?'Trigger ':'Destination ')+priceText(l.price)+' · '+levelDetails(l,a).name);b.addEventListener('click',()=>explain(l));card.append(b);}}
-  if(room.obstacles?.length){card.append(node('h3','Check before the farther destination'));for(const l of room.obstacles){const b=node('button',priceText(l.price)+' '+read.instrument+' · '+levelDetails(l,a).name,'checkpoint-link');b.addEventListener('click',()=>explain(l));card.append(b);}}
+  for(const id of [s.triggerId,s.targetId]){const l=a.levels.find(l=>l.id===id);if(l){const b=node('button',(id===s.triggerId?'Trigger ':'First objective ')+priceText(l.price)+' · '+levelDetails(l,a).name);b.addEventListener('click',()=>explain(l));card.append(b);}}
+  if(route.hasContinuation){
+   const c=s.continuation,stage=route.stages[1],box=node('div',undefined,'continuation');
+   box.append(node('h3','Broader conditional objective'),node('strong',priceText(stage.to.price)+' '+read.instrument,'route-objective'),node('p',priceText(route.totalPoints)+' points across the full route · '+priceText(stage.points)+' beyond the first objective','route-distance'),node('p',c.condition),node('p',c.rationale),node('p','Acceptance needed: '+c.confirmation),node('p','Cancel this continuation: '+c.invalidation));
+   const button=node('button','Why '+priceText(stage.to.price)+' · '+levelDetails(stage.to,a).name);button.addEventListener('click',()=>explain(stage.to));box.append(button);card.append(box);
+  }else if(s.continuation?.rationale)card.append(node('p','Broader objective: '+s.continuation.rationale,'muted'));
+  const checks=route.stages.flatMap(stage=>stage.checks);
+  if(checks.length){card.append(node('h3','Reaction checkpoints along the route'),node('p','Reassess acceptance or rejection at each. A farther objective depends on these tests.','muted'));for(const l of checks){const b=node('button',priceText(l.price)+' '+read.instrument+' · '+levelDetails(l,a).name,'checkpoint-link');b.addEventListener('click',()=>explain(l));card.append(b);}}
+  if(route.ready)card.append(node('p','Route distances describe conditional price structure, not an expected move or risk/reward.','muted'));
   if(s.drivers?.length){card.append(node('h3','Evidence behind this path'));for(const d of s.drivers){const p=a.panels?.find(p=>p.id===d.panelId),source=read.sources.find(src=>src.id===d.sourceId),button=node('button',(p?.title||source?.title||'Source')+' · '+d.effect,'driver-link');button.title=d.reason;button.addEventListener('click',()=>focusEvidence(d.panelId||d.sourceId));card.append(button);}}
   $('scenarios').append(card);
  }for(const id of ['changes','gaps']){$(id).replaceChildren();for(const item of a[id])$(id).append(node('li',item));} $('export').disabled=false;$('explanation-title').textContent='Why this level matters';$('explanation-body').textContent='Select a level to see its source evidence.';}

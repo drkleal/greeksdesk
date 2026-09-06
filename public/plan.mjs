@@ -40,3 +40,18 @@ export function setupRoom(s,levels,minimum=5,checkpoints=[]){
  if(first)return {eligible:false,obstacles,points:Math.abs(first.price-from.price),text:'Watch only · '+priceText(Math.abs(first.price-from.price))+' points to intervening structure at '+priceText(first.price)+' · farther path withheld'};
  return {eligible:points>=minimum,points,text:points<=1?"Watch only · nearby prices are one decision zone":points<minimum?"Watch only · "+priceText(points)+" points to the next reference; under the "+minimum+"-point planning minimum":priceText(points)+" points to the reference · risk/reward not yet established"};
 }
+
+// Distances describe separate conditional stages, never a forecast or an entry-to-profit calculation.
+export function scenarioRoute(s,levels,checkpoints){
+ if(!Array.isArray(checkpoints))return {ready:false,reason:'Rebuild this read to review the full route and its checkpoints.',stages:[]};
+ const from=levels.find(l=>l.id===s.triggerId),first=levels.find(l=>l.id===s.targetId);
+ if(s.status!=='conditional'||!first||!pathDirectionValid(s,levels))return {ready:false,reason:'No complete structural route is established.',stages:[]};
+ const segment=(a,b,phase)=>{
+  const checks=[...levels,...checkpoints].filter(l=>l.role==='structure'&&(b.price>a.price?l.price>a.price&&l.price<b.price:l.price<a.price&&l.price>b.price)).sort((x,y)=>Math.abs(x.price-a.price)-Math.abs(y.price-a.price));
+  const nearest=checks[0]||b;
+  return {from:a,to:b,phase,points:Math.abs(b.price-a.price),nearest,firstPoints:Math.abs(nearest.price-a.price),checks};
+ };
+ const stages=[segment(from,first,'initial')],c=s.continuation,outer=levels.find(l=>l.id===c?.targetId);
+ if(outer?.role==='structure'&&['condition','confirmation','invalidation','rationale'].every(k=>typeof c[k]==='string'&&c[k].trim())&&(s.direction==='up'?outer.price>first.price:s.direction==='down'?outer.price<first.price:false))stages.push(segment(first,outer,'continuation'));
+ return {ready:true,stages,first:stages[0],totalPoints:Math.abs(stages.at(-1).to.price-from.price),hasContinuation:stages.length>1};
+}
