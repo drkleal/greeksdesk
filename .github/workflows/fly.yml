@@ -24,7 +24,7 @@ jobs:
           docker build -t greeksdesk-smoke .
           docker run --rm -d --name greeksdesk-smoke -p 8080:8080 -e DESK_PASSWORD=smoke-only greeksdesk-smoke
           trap 'docker logs greeksdesk-smoke; docker stop greeksdesk-smoke' EXIT
-          curl --fail --retry 8 --retry-connrefused --retry-delay 2 http://127.0.0.1:8080/healthz
+          curl --fail --max-time 10 --retry 8 --retry-all-errors --retry-delay 2 http://127.0.0.1:8080/healthz
           curl --fail --user drkleal:smoke-only http://127.0.0.1:8080/plan.mjs --output /dev/null
           curl --fail --user drkleal:smoke-only http://127.0.0.1:8080/evidence.mjs --output /dev/null
       - uses: superfly/flyctl-actions/setup-flyctl@master
