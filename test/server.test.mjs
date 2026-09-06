@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from '../server.mjs';
+import {readFile,readdir} from 'node:fs/promises';
+
+test('browser text assets are valid UTF-8 so source labels render consistently',async()=>{
+ for(const name of await readdir(new URL('../public/',import.meta.url)))if(/\.(mjs|css|html)$/.test(name)){
+  const data=await readFile(new URL('../public/'+name,import.meta.url));assert.doesNotThrow(()=>new TextDecoder('utf-8',{fatal:true}).decode(data),name);
+ }
+});
 
 test('private preview is locked, health stays available, and authenticated page loads', async () => {
   const server = createServer('test-secret');

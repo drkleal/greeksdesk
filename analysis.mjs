@@ -196,7 +196,7 @@ export function createAnalyzer({env=process.env,request=fetch}={}){
   const hash=createHash('sha256').update(JSON.stringify(packet)).digest('hex');
   if(last?.hash===hash&&Date.now()-last.time<60000)return {...last.result,cached:true};
   if(pending)return {ok:false,message:'An analysis is already running. Wait for it to finish.'};
-  pending=true;
+  pending=true;let stage='request';const started=Date.now();
   try{
    const content=[{type:'input_text',text:JSON.stringify({...packet,analysisTimeUTC:new Date().toISOString(),sources:packet.sources.map(({image,...s})=>({...s,hasImage:!!image}))})}];
    for(const s of packet.sources)if(s.image)content.push({type:'input_text',text:'Chart image for source '+s.id},{type:'input_image',image_url:s.image,detail:'high'});
@@ -230,12 +230,27 @@ For each level give identity: category provider only when an explicit source ind
 
 Keep names short, descriptions concrete and avoid repetitive cautions. Use one short shows/reason sentence per panel, concise level/scenario explanations, and a useful combined summary in plain language (no terms such as basis is null). Historical sessions must consistently be labeled historical, never live/current. Previous summary is only for change comparison, not a source of current levels. Complete the map and three scenario assessments before an exhaustive panel inventory.`,input:[{role:'user',content}],text:{format:{type:'json_schema',name:'scenario_map',strict:true,schema:analysisSchema}}})});
    if(!r.ok)return {ok:false,message:`Analysis service returned HTTP ${r.status}. Check API access/billing if access was rejected. No retry was made.`};
-   const body=await r.json();
+   const body=await r.json();stage='decode';
    if(body.status!=='completed')return {ok:false,message:body.incomplete_details?.reason==='max_output_tokens'?'Analysis reached its response limit. No partial scenario was applied.':'Analysis did not complete. No partial scenario was applied.'};
    const text=body.output?.flatMap(item=>item.content||[]).filter(item=>item.type==='output_text').map(item=>item.text).join('');
-   const analysis=validateAnalysis(JSON.parse(text),packet);
-   const result={ok:true,analysis,checkedAt:new Date().toISOString(),model:env.OPENAI_MODEL||'gpt-5.4',usage:body.usage?{inputTokens:body.usage.input_tokens,outputTokens:body.usage.output_tokens}:null};
+   const decoded=JSON.parse(text);stage='validation';const analysis=validateAnalysis(decoded,packet);
+   const result={ok:true,analysis,checkedAt:new Date().toISOString(),durationSeconds:Math.round((Date.now()-started)/1000),model:env.OPENAI_MODEL||'gpt-5.4',usage:body.usage?{inputTokens:body.usage.input_tokens,outputTokens:body.usage.output_tokens}:null};
    last={hash,time:Date.now(),result};return result;
-  }catch{return {ok:false,message:'Analysis could not be completed or validated. No new scenario was applied; no automatic retry was made.'};}finally{pending=false;}
+  }catch(error){
+   const elapsed=Math.round((Date.now()-started)/1000),suffix=' Previous plan retained; no automatic retry.';
+   if(error?.name==='TimeoutError'||error?.name==='AbortError')return {ok:false,code:'analysis_timeout',durationSeconds:elapsed,message:'Analysis timed out after '+elapsed+' seconds.'+suffix};
+   if(stage==='validation'){
+    const known=new Map([
+     ['The cited ES price does not match its dated source bar.','A generated ES level did not match its cited date, price or bar.'],
+     ['ES-only mode requires native ES panel evidence.','A generated ES level lacked matching ES price evidence.'],
+     ['Panel instrument or date mismatch.','A chart interpretation used the wrong instrument or session date.'],
+     ['Analysis panel does not match a captured provider panel.','A chart interpretation did not match the captured panel.'],
+     ['Invalid level panel.','A generated level cited an unavailable chart panel.'],
+     ['Chart level needs a matching usable panel.','A generated chart level lacked a matching usable panel.']
+    ]);
+    return {ok:false,code:known.has(error?.message)?'evidence_mismatch':'analysis_validation',durationSeconds:elapsed,message:(known.get(error?.message)||'The analysis failed the source and scenario checks.')+suffix};
+   }
+   return {ok:false,code:stage==='decode'?'analysis_format':'analysis_connection',durationSeconds:elapsed,message:(stage==='decode'?'The analysis response was incomplete or unreadable.':'The analysis connection failed before a complete response arrived.')+suffix};
+  }finally{pending=false;}
  };
 }

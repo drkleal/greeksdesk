@@ -29,6 +29,14 @@ test('no key, refusal or truncated analysis never applies a partial map',async()
  for(const body of [{status:'incomplete'}, {status:'completed',output:[{content:[{type:'refusal',refusal:'No'}]}]}]){const analyze=createAnalyzer({env:{OPENAI_API_KEY:'secret'},request:async()=>({ok:true,json:async()=>body})});const r=await analyze(packet);assert.equal(r.ok,false);assert.ok(!JSON.stringify(r).includes('secret'));}
 });
 
+test('analysis distinguishes timeouts, malformed replies and invalid evidence without exposing upstream errors',async()=>{
+ const run=request=>createAnalyzer({env:{OPENAI_API_KEY:'private'},request})(packet);
+ const timeout=await run(async()=>{throw new DOMException('secret upstream text','TimeoutError');});assert.equal(timeout.code,'analysis_timeout');assert.ok(!timeout.message.includes('secret'));
+ const bad=await run(async()=>({ok:true,json:async()=>({status:'completed',output:[{content:[{type:'output_text',text:'not-json'}]}]})}));assert.equal(bad.code,'analysis_format');
+ const invalid=await run(async()=>({ok:true,json:async()=>({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify({...valid,levels:[{id:'x',price:7790,apiOrigin:{sourceId:'databento'},sourceIds:['databento']}]})}]}]})}));assert.equal(invalid.code,'evidence_mismatch');assert.match(invalid.message,/cited date, price or bar/);
+ const connection=await run(async()=>{throw Error('https://private/key=secret');});assert.equal(connection.code,'analysis_connection');assert.ok(!JSON.stringify(connection).includes('secret'));
+});
+
 test('data-only reference read has exact extrema and no AI request or trading triggers',async()=>{
  let calls=0;const analyze=createAnalyzer({env:{OPENAI_API_KEY:'private'},request:()=>{calls++;throw Error();}});
  const r=await analyze({date:'2026-09-04',instrument:'SPX',sources:[{id:'gamma',title:'Gamma',sessionDate:'2026-09-04',data:{actualSlot:'2026-09-04T16:00:00',rows:[{price:7743,value:-1743},{price:7740.5,value:-1871},{price:7715.5,value:1174}]}}]});
