@@ -2,6 +2,11 @@ import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {validDate,nyTime,isCashObservation,cashSession} from './public/session.mjs';
 
+function marketClock(bar){
+ const p=nyTime(bar.timestamp),hour=String(Math.floor(p.seconds/3600)).padStart(2,'0'),minute=String(Math.floor(p.seconds/60)%60).padStart(2,'0');
+ return {...bar,newYorkTime:p.date+' '+hour+':'+minute+' America/New_York'};
+}
+
 // Preserve the whole observed session at broader resolutions without another API request.
 export function aggregateESBars(bars,minutes){
  const groups=new Map(),duration=minutes*60000;
@@ -11,7 +16,7 @@ export function aggregateESBars(bars,minutes){
   if(!g){g={timestamp:new Date(start).toISOString(),end:new Date(start+duration).toISOString(),observedThrough:b.end,open:b.open,high:b.high,low:b.low,close:b.close,volume:0,minuteCount:0,complete:false};groups.set(start,g);}
   g.high=Math.max(g.high,b.high);g.low=Math.min(g.low,b.low);g.close=b.close;g.volume+=b.volume;g.minuteCount++;g.observedThrough=b.end;g.complete=g.minuteCount===minutes;
  }
- return [...groups.values()];
+ return [...groups.values()].map(marketClock);
 }
 
 export function summarizeES(raw,now=Date.now()){
@@ -35,7 +40,7 @@ export function summarizeES(raw,now=Date.now()){
  return {ok:true,count:bars.length||1,available:true,ticker:'ES',contract:raw.contract,requestedSymbol:raw.requestedSymbol,dataset:raw.dataset,sessionDate:raw.sessionDate,checkedAt:new Date(now).toISOString(),
   latestPrice:latest?.price??null,latestTimestamp:latest?.timestamp??null,priceKind:latest?.kind??null,
   freshness:q&&latest===q&&age>=0&&age<=20?'fresh':nyTime(now)?.date===raw.sessionDate?'stale':'historical',ageSeconds:age,
-  session:stats(bars),cashSession:stats(cash),recentBars:bars.slice(-120),averageTrueRange1m:ranges.length===14?ranges.reduce((n,x)=>n+x,0)/14:null,
+  session:stats(bars),cashSession:stats(cash),recentBars:bars.slice(-120).map(marketClock),averageTrueRange1m:ranges.length===14?ranges.reduce((n,x)=>n+x,0)/14:null,
   structureVersion:1,bars5m:aggregateESBars(bars,5),bars15m:aggregateESBars(bars,15),
   structureScope:'Full observed futures session in 5-minute and 15-minute bars; last 120 one-minute bars for local timing. Aggregate OHLCV uses only returned minute records. complete=false means not every minute slot is represented; observedThrough is the last supplied minute end. Session range describes past movement, not a forecast.',
   priceObservations:bars.map(b=>({price:b.close,timestamp:b.end})),messages:raw.messages||[],estimatedHistoryCostUSD:raw.estimatedHistoryCostUSD,

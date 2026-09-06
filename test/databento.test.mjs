@@ -53,3 +53,13 @@ test('a full futures-session analysis payload stays within the source-size budge
  assert.equal(data.bars5m.length,276);assert.equal(data.bars15m.length,92);
  assert.ok(JSON.stringify(data).length<200000);
 });
+
+test('New York bar labels preserve summer/winter offsets and the prior-evening date',()=>{
+ const raw=sample();raw.bars=[makeBar('2026-09-04T00:00:00Z'),makeBar('2026-09-04T16:45:00Z')];
+ const summer=summarizeES(raw,Date.parse('2026-09-06T12:00:00Z'));
+ assert.equal(summer.bars5m[0].newYorkTime,'2026-09-03 20:00 America/New_York');
+ assert.equal(summer.bars15m[1].newYorkTime,'2026-09-04 12:45 America/New_York');
+ assert.equal(summer.recentBars[1].timestamp,'2026-09-04T16:45:00Z');
+ const winter=sample();winter.sessionDate='2026-01-05';winter.bars=[makeBar('2026-01-05T16:45:00Z')];
+ assert.equal(summarizeES(winter,Date.parse('2026-01-06T12:00:00Z')).recentBars[0].newYorkTime,'2026-01-05 11:45 America/New_York');
+});
