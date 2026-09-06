@@ -35,7 +35,7 @@ async function updateData(){
  const results=await Promise.allSettled([provider('quantdata',date),provider('optionsdepth',date)]);let failure=[];
  const drift=results[0].status==='fulfilled'?results[0].value:null,slots=results[1].status==='fulfilled'?results[1].value:null;
  for(const r of results)if(r.status==='rejected')failure.push(r.reason.message);
- if(drift){sources.push({id:'quantdata',title:'Quant Data · SPX Net Drift',sessionDate:date,capturedAt:drift.checkedAt,url:links.quantdata,data:drift});$('price').textContent=drift.latestPrice?.toLocaleString()??'Unavailable';$('price-time').textContent='Data: '+(drift.latestTimestamp||'No timestamp');$('data-session').textContent=date;$('data-freshness').textContent=date===today()?'Compare the source time with the current time.':'Historical session · not current market data';}
+ if(drift){sources.push({id:'quantdata',title:'Quant Data · SPX Net Drift',sessionDate:date,capturedAt:drift.checkedAt,url:links.quantdata,data:{...drift,priceObservations:undefined}});$('price').textContent=drift.latestPrice?.toLocaleString()??'Unavailable';$('price-time').textContent='Data: '+(drift.latestTimestamp||'No timestamp');$('data-session').textContent=date;$('data-freshness').textContent=date===today()?'Compare the source time with the current time.':'Historical session · not current market data';}
  else{$('price').textContent='Unavailable';$('price-time').textContent='Latest update failed';}
  if(slots)sources.push({id:'timestamps',title:'OptionsDepth · Available model times',sessionDate:date,capturedAt:slots.checkedAt,url:links.gamma,data:{count:slots.count,earliest:slots.slots[0],latest:slots.slots.at(-1),note:'Availability only; not an exposure reading.'}});
  if($('include-gamma').checked){

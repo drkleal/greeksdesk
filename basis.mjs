@@ -1,6 +1,6 @@
 export function calculateBasis(observation,spx,date){
  if(!observation||observation.instrument!=='ES'||!Number.isFinite(observation.price)||observation.price<=0||typeof observation.timestamp!=='string'||!observation.timestamp.endsWith('Z'))throw Error('The screenshot needs a readable ES price and timestamp with a known timezone.');
- const t=Date.parse(observation.timestamp),reference=Date.parse(spx.latestTimestamp);
+ const t=Date.parse(observation.timestamp);const nearest=spx.priceObservations?.filter(r=>Number.isFinite(r.price)&&Number.isFinite(Date.parse(r.timestamp))).sort((a,b)=>Math.abs(Date.parse(a.timestamp)-t)-Math.abs(Date.parse(b.timestamp)-t))[0];if(nearest)spx={...spx,latestTimestamp:nearest.timestamp,latestPrice:nearest.price};const reference=Date.parse(spx.latestTimestamp);
  if(!Number.isFinite(t)||!Number.isFinite(reference)||observation.timestamp.slice(0,10)!==date||spx.latestTimestamp.slice(0,10)!==date||Math.abs(t-reference)>120000)throw Error('The ES screenshot and available SPX price are not within two minutes of each other. Use a matching-time screenshot or enter a verified basis.');
  const basis=Math.round((observation.price-spx.latestPrice)*100)/100;if(!Number.isFinite(basis)||Math.abs(basis)>200)throw Error('The price difference is outside the supported range. Check the contract and prices.');
  return {ok:true,basis,esPrice:observation.price,esTime:observation.timestamp,contract:observation.contract,spxPrice:spx.latestPrice,spxTime:spx.latestTimestamp};
