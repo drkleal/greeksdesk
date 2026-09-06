@@ -161,3 +161,22 @@ test('wrong-way scenario target is withheld and future-model evidence cannot cla
  const result=validateAnalysis({...structuredClone(valid),levels,panels:[structuredClone(panel),future],scenarios},packet);
  assert.equal(result.scenarios.find(s=>s.direction==='down').status,'insufficient');assert.ok(result.scenarios.every(s=>s.drivers[0].effect==='context'));
 });
+
+
+test('chart intake accepts eight selected images and rejects a ninth',()=>{
+ const sources=Array.from({length:8},(_,i)=>({...packet.sources[0],id:'chart-'+i}));
+ assert.equal(validatePacket({...packet,sources}).sources.length,8);
+ assert.throws(()=>validatePacket({...packet,sources:[...sources,{...sources[0],id:'chart-9'}]}),/eight chart images/);
+});
+test('trade-derived VWAP and profile nodes require exact named session and origin',()=>{
+ const through='2026-09-04T20:00:00.000Z';
+ const input={date:'2026-09-04',instrument:'ES',basis:null,sources:[{id:'databento',title:'ESU6',sessionDate:'2026-09-04',data:{available:true,ticker:'ES',dataset:'GLBX.MDP3',contract:'ESU6',recentBars:[{open:7715,high:7725,low:7710,close:7720}],volumeProfile:{available:true,contract:'ESU6',schema:'trades',completeWindow:true,through,nodes:[{kind:'POC',price:7717.25}]},sessionProfiles:{RTH:{high:7725,low:7710,vwap:7718.135,through}}}}]};
+ const level={id:'vwap',price:7718.135,label:'RTH VWAP',role:'structure',kind:'reference',sourceIds:['databento'],panelIds:[],evidence:'Trade-weighted session mean and observed retest',watch:'Acceptance',invalidation:'Loss',apiOrigin:{sourceId:'databento',sessionDate:input.date,timeframe:'rth_profile',timestamp:through,field:'vwap'}};
+ const check=(l=level)=>validateAnalysis({...structuredClone(valid),levels:[l]},input);
+ assert.equal(check().levels[0].price,7718.135);
+ assert.throws(()=>check({...level,price:7718.25}));
+ assert.throws(()=>check({...level,apiOrigin:{...level.apiOrigin,timeframe:'london_profile'}}));
+ assert.throws(()=>check({...level,apiOrigin:{...level.apiOrigin,timestamp:'2026-09-04T19:00:00Z'}}));
+ assert.equal(check({...level,price:7717.25,apiOrigin:{...level.apiOrigin,timeframe:'volume_profile',field:'poc'}}).levels[0].price,7717.25);
+ assert.throws(()=>check({...level,price:7717.25,apiOrigin:{...level.apiOrigin,timeframe:'volume_profile',field:'hvn'}}));
+});

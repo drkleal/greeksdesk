@@ -55,15 +55,25 @@ export function summarizeES(raw,now=Date.now()){
  const age=latest?(now-Date.parse(latest.timestamp))/1000:null;
  if(age!==null&&age< -5)throw Error('Future ES observation');
  let priorContext;try{priorContext=summarizePriorContext(raw.priorContext,raw.contract,raw.sessionDate,last?.instrumentId??q?.instrumentId);}catch{priorContext={available:false,message:'Earlier ES history failed its contract, date or price checks. Current-session data remains available.'};}
+ const volumeProfile=validateESProfile(raw.volumeProfile,raw.contract,raw.sessionDate,last?.instrumentId??q?.instrumentId,now);
  return {ok:true,count:bars.length||1,available:true,ticker:'ES',contract:raw.contract,requestedSymbol:raw.requestedSymbol,dataset:raw.dataset,sessionDate:raw.sessionDate,checkedAt:new Date(now).toISOString(),
   latestPrice:latest?.price??null,latestTimestamp:latest?.timestamp??null,priceKind:latest?.kind??null,
   freshness:q&&latest===q&&age>=0&&age<=20?'fresh':esSessionDate(now)===raw.sessionDate?'stale':'historical',ageSeconds:age,
   session:stats(bars),cashSession:stats(cash),recentBars:bars.slice(-120).map(marketClock),averageTrueRange1m:ranges.length===14?ranges.reduce((n,x)=>n+x,0)/14:null,
   structureVersion:1,bars5m:aggregateESBars(bars,5),bars15m:aggregateESBars(bars,15),
   priorContext,
+  volumeProfile,
+  sessionProfiles:volumeProfile.sessionProfiles||{},
   structureScope:'Full observed futures session in 5-minute and 15-minute bars; last 120 one-minute bars for local timing. Aggregate OHLCV uses only returned minute records. complete=false means not every minute slot is represented; observedThrough is the last supplied minute end. Session range describes past movement, not a forecast.',
   priceObservations:bars.map(b=>({price:b.close,timestamp:b.end})),messages:raw.messages||[],estimatedHistoryCostUSD:raw.estimatedHistoryCostUSD,
   limitation:'Unadjusted '+raw.contract+' prices. Session window: prior 18:00–17:00 New York. Bars describe observed prices, not exchange settlement. Completed bar closes have interval-end timestamps; no exact trade-time claim. A fresh price does not refresh an older scenario.'};
+}
+
+export function validateESProfile(profile,contract,date,instrumentId,now=Date.now()){
+ if(!profile?.available)return {available:false,message:profile?.message||'Trade-derived volume profile was not supplied.',...(Number.isFinite(profile?.estimatedCostUSD)&&profile.estimatedCostUSD>=0?{estimatedCostUSD:profile.estimatedCostUSD}:{} )};
+ const bounds=esSessionBounds(date),from=Date.parse(profile.from),through=Date.parse(profile.through);
+ const valid=profile.contract===contract&&profile.instrumentId===instrumentId&&profile.dataset==='GLBX.MDP3'&&profile.schema==='trades'&&profile.completeWindow===true&&from===Date.parse(bounds.start)&&through>from&&through<=Math.min(now,Date.parse(bounds.end))&&Array.isArray(profile.nodes)&&profile.nodes.every(n=>['POC','HVN','LVN'].includes(n.kind)&&Number.isFinite(n.price)&&n.price>0)&&Object.values(profile.sessionProfiles||{}).every(s=>[s.high,s.low,s.vwap,s.volume].every(Number.isFinite)&&s.volume>0&&s.low<=s.vwap&&s.vwap<=s.high&&Date.parse(s.from)>=from&&Date.parse(s.through)<=through);
+ return valid?profile:{available:false,message:'Volume profile failed contract, window or price validation.'};
 }
 
 function worker(input,env){return new Promise(resolve=>{
@@ -79,7 +89,7 @@ function worker(input,env){return new Promise(resolve=>{
 });}
 
 export function createDatabento({env=process.env,run=worker,now=Date.now}={}){
- const cache=new Map(),contextCache=new Map();let pending=null;
+ const cache=new Map(),contextCache=new Map(),profileCache=new Map();let pending=null;
  return async(date,symbol=env.DATABENTO_ES_SYMBOL||'ES.v.0')=>{
   if(!validDate(date)||!/^ES(?:\.v\.0|[HMUZ]\d{1,2})$/.test(symbol))throw Error('Select a valid ES contract and date.');
   if(!env.DATABENTO_API_KEY)return {ok:false,configured:false,message:'Databento key is not configured.'};
@@ -87,11 +97,14 @@ export function createDatabento({env=process.env,run=worker,now=Date.now}={}){
   if(old&&now()-old.at<ttl){const result=structuredClone(old.result);if(result.latestTimestamp){result.ageSeconds=(now()-Date.parse(result.latestTimestamp))/1000;if(result.freshness==='fresh'&&result.ageSeconds>20)result.freshness='stale';}return {...result,cached:true};}
   if(pending)return {ok:false,message:'An ES market-data read is already running.'};
   pending=key;try{
-   const prior=contextCache.get(key),reuse=prior&&now()-prior.at<86400000;
-   const raw=await run({date,symbol,...(reuse?{cached_context_contract:prior.contract}:{})},env);
+   const prior=contextCache.get(key),reuse=prior&&now()-prior.at<86400000,priorProfile=profileCache.get(key),reuseProfile=priorProfile&&now()-priorProfile.at<(date===esSessionDate(now())?300000:86400000),hours=cashSession(date);
+   const cashClose=hours?new Date(Date.parse(esSessionBounds(date).end)-(17*3600-hours.close)*1000).toISOString():null;
+   const raw=await run({date,symbol,cash_close:cashClose,...(reuse?{cached_context_contract:prior.contract}:{}),...(reuseProfile?{cached_profile_contract:priorProfile.contract}:{})},env);
    if(raw.contextReused&&reuse&&raw.contract===prior.contract)raw.priorContext=structuredClone(prior.raw);
+   if(raw.profileReused&&reuseProfile&&raw.contract===priorProfile.contract)raw.volumeProfile={...structuredClone(priorProfile.raw),cached:true};
    const result=summarizeES(raw,now());
    if(result.ok){
+    if(result.volumeProfile.available&&!raw.profileReused){profileCache.set(key,{at:now(),contract:raw.contract,raw:structuredClone(raw.volumeProfile)});if(profileCache.size>8)profileCache.delete(profileCache.keys().next().value);}
     if(result.priorContext.available&&!raw.contextReused){contextCache.set(key,{at:now(),contract:raw.contract,raw:structuredClone(raw.priorContext)});if(contextCache.size>8)contextCache.delete(contextCache.keys().next().value);}
     result.priorContext.cached=!!raw.contextReused&&!!reuse&&raw.contract===prior.contract;
     cache.set(key,{at:now(),result});if(cache.size>8)cache.delete(cache.keys().next().value);

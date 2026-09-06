@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {exposureSnapshot} from '../market-context.mjs';
 import {cashBasisReference} from '../basis.mjs';
-import {conversionFor,exposureColumns,levelConfluence,confluenceSummary,sanitizeConfluence,familyInventory} from '../public/confluence.mjs';
+import {conversionFor,exposureColumns,levelConfluence,confluenceSummary,confluenceLabel,sanitizeConfluence,familyInventory} from '../public/confluence.mjs';
 const date='2026-09-04';
 test('ordered exposure ladder keeps 0DTE separate from the all-expiry total',()=>{
  const x=exposureSnapshot({data:{SPX:{stockPrice:7718,exposureMap:{[date]:{'7715':{callExposure:20,putExposure:-5},'7720':{callExposure:30,putExposure:null}},'2026-09-08':{'7715':{callExposure:200,putExposure:-50},'7725':{callExposure:50}}}}}},date);
@@ -33,4 +33,19 @@ test('repeat provider views never increase the supporting family count and unkno
  const read=fixture();assert.equal(exposureColumns(read).find(c=>c.id==='qd-gamma-0dte').rows.length,0);
  assert.deepEqual(confluenceSummary([{family:'gamma',effect:'supports'},{family:'gamma',effect:'supports'},{family:'flow',effect:'opposes'}]),{support:['gamma'],oppose:['flow'],context:[]});
  const f=familyInventory(read);assert.equal(f.find(x=>x.id==='gamma').items.length,2);assert.equal(f.find(x=>x.id==='volatility').items.length,0);
+});
+
+test('gold stars require three or four distinct supporting families',()=>{
+ const rows=['gamma','delta','acceptance','flow','positioning'].map(family=>({family,effect:'supports'}));
+ assert.equal(confluenceLabel([]).text,'');assert.equal(confluenceLabel(rows.slice(0,2)).stars,'');
+ assert.equal(confluenceLabel(rows.slice(0,3)).stars,'★');assert.equal(confluenceLabel(rows.slice(0,4)).stars,'★★');assert.equal(confluenceLabel(rows).stars,'★★');
+ assert.equal(confluenceLabel([...rows.slice(0,2),rows[0],rows[1]]).count,2);
+});
+test('coordinate overlap, missing evidence and conflicting views cannot earn a star',()=>{
+ const rows=[{family:'gamma',effect:'supports'},{family:'gamma',effect:'opposes'},{family:'delta',effect:'supports'},{family:'vanna',effect:'context'},{family:'charm',effect:'supports',coordinateOnly:true},{family:'flow',effect:'unavailable'}];
+ assert.deepEqual(confluenceLabel(rows).families,['delta']);assert.equal(confluenceLabel(rows).text,'DEX');assert.equal(confluenceLabel(rows).stars,'');
+});
+test('visible labels preserve named profile contributions without multiplying one family',()=>{
+ const label=confluenceLabel([{family:'gamma',effect:'supports'},{family:'acceptance',effect:'supports',observation:'RTH VWAP and HVN meet at the boundary'},{family:'acceptance',effect:'supports',observation:'POC in the same source profile'}]);
+ assert.equal(label.text,'GEX · VWAP / POC / HVN');assert.equal(label.count,2);assert.equal(label.stars,'');
 });

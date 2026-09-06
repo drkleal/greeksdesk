@@ -1,8 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {summarizeES,createDatabento} from '../databento.mjs';
+import {summarizeES,createDatabento,validateESProfile} from '../databento.mjs';
 const makeBar=(time='2026-09-04T19:59:00Z',id=123)=>({timestamp:time,end:new Date(Date.parse(time)+60000).toISOString(),open:7715,high:7717,low:7714,close:7716,volume:50,instrumentId:id});
 const sample=()=>({ok:true,contract:'ESU6',dataset:'GLBX.MDP3',sessionDate:'2026-09-04',bars:[makeBar()],quote:null,messages:[]});
+
+test('volume profile must match the ES contract, requested window and weighted price bounds',()=>{
+ const p={available:true,contract:'ESU6',instrumentId:123,dataset:'GLBX.MDP3',schema:'trades',completeWindow:true,from:'2026-09-03T22:00:00.000Z',through:'2026-09-04T20:00:00.000Z',nodes:[{kind:'POC',price:7716}],sessionProfiles:{RTH:{from:'2026-09-04T13:30:00Z',through:'2026-09-04T20:00:00Z',low:7714,high:7718,vwap:7716,volume:10}}};
+ const check=p=>validateESProfile(p,'ESU6','2026-09-04',123,Date.parse('2026-09-06'));
+ assert.equal(check(p).available,true);assert.equal(check({...p,contract:'ESZ6'}).available,false);assert.equal(check({...p,through:'2026-09-04T22:00:00Z'}).available,false);
+ assert.equal(check({...p,sessionProfiles:{RTH:{...p.sessionProfiles.RTH,vwap:7790}}}).available,false);
+});
 test('ES records preserve actual contract, completed-bar time and cash-session scope',()=>{
  const raw=sample();raw.bars.push(makeBar('2026-09-04T20:59:00Z'));
  const result=summarizeES(raw,Date.parse('2026-09-06T12:00:00Z'));

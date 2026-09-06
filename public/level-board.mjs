@@ -1,0 +1,89 @@
+import {node,labelPositions} from './map.mjs';
+import {conversionFor,exposureColumns,compact,signed,levelConfluence,confluenceLabel} from './confluence.mjs';
+import {priceText,levelDetails,scenarioRoute} from './plan.mjs';
+const ns='http://www.w3.org/2000/svg';
+const svg=(tag,attrs={},text)=>{const e=document.createElementNS(ns,tag);for(const [k,v]of Object.entries(attrs))e.setAttribute(k,v);if(text!==undefined)e.textContent=text;return e;};
+function active(e,click){e.setAttribute('tabindex','0');e.setAttribute('role','button');e.addEventListener('click',click);e.addEventListener('keydown',event=>{if(['Enter',' '].includes(event.key)){event.preventDefault();click();}});}
+export function renderLevelBoard(host,read,{inspectLevel,inspectSource,inspectScenario}){
+ const a=read.result.analysis,conversion=conversionFor(read),columns=exposureColumns(read),feed=read.sources.find(s=>s.id==='databento')?.data;
+ const title=node('div',undefined,'wb-board-heading');title.append(node('h3','Conditional paths & confluence · '+read.instrument),node('p','Aligned exposure bars, price structure and conditions. Larger bars show larger values within each source’s scale.','muted'));
+ const controls=node('div',undefined,'controls'),range=node('select');range.setAttribute('aria-label','Confluence chart range');for(const [value,label]of [[80,'±80 points'],[40,'±40 points'],[150,'±150 points']]){const o=node('option',label);o.value=value;range.append(o);}controls.append(node('span',conversion.label,'wb-basis'),range);title.append(controls);host.append(title);
+ const tooltip=node('div',undefined,'wb-board-tooltip');tooltip.hidden=true;tooltip.id='confluence-hover';tooltip.setAttribute('role','tooltip');host.append(tooltip);
+ function tip(target,heading,lines,action){
+  target.append(svg('title',{},heading+' · '+lines.join(' · ')));target.setAttribute('aria-label',heading);target.setAttribute('aria-describedby',tooltip.id);
+  const hide=()=>{tooltip.hidden=true;};
+  const show=()=>{tooltip.replaceChildren(node('strong',heading),...lines.map(l=>node('p',l)),node('small','Click to open the complete evidence'));tooltip.hidden=false;const b=target.getBoundingClientRect();tooltip.style.left=Math.max(10,Math.min(innerWidth-390,b.x+20))+'px';tooltip.style.top=Math.max(10,Math.min(innerHeight-250,b.y+25))+'px';};
+  target.addEventListener('mouseenter',show);target.addEventListener('focus',show);target.addEventListener('mouseleave',hide);target.addEventListener('blur',hide);active(target,()=>{hide();action();});
+ }
+ const plot=node('div',undefined,'wb-board-scroll');host.append(plot);
+ const groups=[{label:'GAMMA',ids:['qd-gamma','qd-gamma-0dte','od-gex-mm-strike'],x:130,w:270},{label:'DEX',ids:['qd-delta','od-dex-mm-strike'],x:420,w:215},{label:'VANNA',ids:['qd-vanna','od-vex-mm-strike'],x:655,w:215},{label:'OPEN INTEREST',ids:['qd-oi-strike'],x:890,w:170}];
+ function draw(){
+  plot.replaceChildren();tooltip.hidden=true;const canMap=conversion.kind!=='unmapped',basis=conversion.basis||0;
+  const last=read.instrument==='ES'?feed?.latestPrice:read.sources.find(s=>s.id==='quantdata')?.data?.latestPrice;
+  const spot=Number.isFinite(last)?last:(a.levels[0]?.price||0),span=Number(range.value),min=Math.floor((spot-span)/5)*5,max=Math.ceil((spot+span)/5)*5;
+  if(!spot){plot.append(node('p','Verified price levels will appear here after the first analysis.','muted'));return;}
+  const H=Math.max(850,(max-min)/5*25+125),W=1660,top=65,bottom=H-45,y=p=>top+(max-p)/(max-min)*(bottom-top);
+  const root=svg('svg',{viewBox:`0 0 ${W} ${H}`,class:'wb-level-board','aria-label':'Full width price and exposure confluence chart'}),defs=svg('defs');
+  for(const [d,c]of [['up','#40ffc1'],['down','#ff5e90'],['neutral','#ffe16a']]){const m=svg('marker',{id:'board-arrow-'+d,markerWidth:8,markerHeight:8,refX:6,refY:3,orient:'auto'});m.append(svg('path',{d:'M0,0 L0,6 L7,3 z',fill:c}));defs.append(m);}root.append(defs);
+  root.append(svg('text',{x:14,y:23,fill:'#cce6ff','font-size':14},read.instrument+' LEVEL'),svg('text',{x:1080,y:23,fill:'#cce6ff','font-size':14},'SESSION / PROFILE / DEPTH'),svg('text',{x:1350,y:23,fill:'#cce6ff','font-size':14},'KEY LEVELS & CONFLUENCE'));
+  if(!canMap)root.append(svg('text',{x:130,y:43,fill:'#ffe16a','font-size':13},'SPX columns require a matching basis. Native ES structure remains visible.'));
+  for(let p=min;p<=max;p+=5){const yy=y(p);root.append(svg('line',{x1:10,x2:1645,y1:yy,y2:yy,stroke:'#17395b'}),svg('text',{x:100,y:yy+4,'text-anchor':'end',fill:'#e5f5ff','font-size':14,'font-weight':700},priceText(p)));if(canMap&&read.instrument==='ES')root.append(svg('text',{x:100,y:yy+15,'text-anchor':'end',fill:'#89a8ce','font-size':10},'SPX '+priceText(p-basis)));}
+  for(const group of groups){
+   root.append(svg('text',{x:group.x,y:23,fill:'#8fbbf4','font-size':14},group.label));
+   const selected=group.ids.map(id=>columns.find(c=>c.id===id)).filter(Boolean),baseX=group.x+group.w/2;
+   root.append(svg('line',{x1:baseX,x2:baseX,y1:top,y2:bottom,stroke:'#486381'}));
+   selected.forEach((col,i)=>{
+    const rows=canMap?col.rows.filter(r=>r.price+basis>=min&&r.price+basis<=max):[];
+    const comparable=col.id.startsWith('qd-')?selected.filter(c=>c.id.startsWith('qd-')):[col];
+    const scale=Math.max(1,...comparable.flatMap(c=>c.rows).filter(r=>r.price+basis>=min&&r.price+basis<=max).flatMap(r=>[r.call,r.put,r.net].filter(Number.isFinite).map(Math.abs)));
+    for(const r of rows){const yy=y(r.price+basis),g=svg('g'),od=col.id.startsWith('od-'),oi=col.id==='qd-oi-strike',zero=col.id.endsWith('-0dte');
+     const vals=oi?[-r.put,r.call]:Number.isFinite(r.call)?[r.put,r.call]:[r.net],h=od?3:zero?8:12,offset=od?8:0;
+     for(const v of vals){if(!Number.isFinite(v)||v===0)continue;const width=Math.max(.8,Math.abs(v)/scale*(group.w/2-8)),color=oi?(v>=0?'#67b8ff':'#c797ff'):od?'#ffffff':v>=0?'#40ffc1':'#ff5e90';g.append(svg('rect',{x:v>=0?baseX:baseX-width,y:yy-h/2+offset,width,height:h,fill:color,opacity:od?.9:zero?1:group.ids.length===3?.38:.78}));}
+     // Whole row is focusable so small exposures are still inspectable.
+     g.append(svg('rect',{x:group.x,y:yy-7+offset,width:group.w,height:od?5:13,fill:'transparent'}));
+     tip(g,col.title+' · '+priceText(r.price)+' SPX',[col.unit+' · '+col.scope,oi?'Calls '+compact(r.call)+' · Puts '+compact(r.put):'Net '+signed(r.net),col.source?.data?.limitation||'Provider observation'],()=>inspectSource(col.source,{title:col.title+' · SPX '+priceText(r.price),facts:[col.unit+' · '+col.scope,oi?'Calls '+compact(r.call)+' · Puts '+compact(r.put):'Net '+signed(r.net)]}));root.append(g);
+    }
+   });
+   root.append(svg('text',{x:group.x,y:H-12,fill:'#8eabd0','font-size':10},group.label==='OPEN INTEREST'?'Blue calls / purple puts · contracts':'QD signed bars · OD white bar, own scale'));
+  }
+  const references=[];
+  for(const [name,data]of [['Futures session',feed?.session],['RTH',feed?.cashSession],...Object.entries(feed?.sessionProfiles||{})]){
+   if(!data)continue;
+   for(const [kind,key]of [['high','high'],['low','low'],['VWAP','vwap']])if(Number.isFinite(data[key]))references.push({price:data[key],name:name+' '+kind,source:read.sources.find(s=>s.id==='databento'),detail:(data.from||'')+' → '+(data.through||'')+(kind==='VWAP'?' · '+(data.vwapMethod||'trade-weighted'):' · observed session extreme')});
+  }
+  for(const l of [...a.levels,...(a.checkpoints||[])])if(/poc|hvn|lvn|vwap|profile|value area/i.test(l.identity?.name||l.label))references.push({price:l.price,name:l.identity?.name||l.label,level:l,detail:l.evidence});
+  const profile=feed?.volumeProfile;if(profile?.available)for(const r of profile.nodes||[])references.push({price:r.price,name:r.kind,source:read.sources.find(s=>s.id==='databento'),detail:r.reason||profile.method});
+  const lanes=[0,0,0];
+  for(const r of references.filter(r=>r.price>=min&&r.price<=max)){const yy=y(r.price),lane=lanes.indexOf(Math.min(...lanes));lanes[lane]++;const x=1080+lane*85,g=svg('g');g.append(svg('line',{x1:10,x2:1320,y1:yy,y2:yy,stroke:'#afc7e8','stroke-dasharray':/VWAP/.test(r.name)?'7 4':'2 4',opacity:.5}),svg('circle',{cx:x,cy:yy,r:4,fill:/POC/i.test(r.name)?'#ff68d3':'#d5e8ff'}),svg('text',{x:x+7,y:yy-4,fill:'#d5e8ff','font-size':10},r.name));tip(g,r.name+' · '+priceText(r.price),[r.detail],()=>r.level?inspectLevel(r.level):inspectSource(r.source,{title:r.name+' · '+priceText(r.price),facts:[r.detail]}));root.append(g);}
+  const depth=read.sources.find(s=>s.id==='od-depth-gex');if(canMap&&depth?.data.available)for(const d of (depth.data.byStrike||[]).filter(r=>r.strike+basis>=min&&r.strike+basis<=max).sort((a,b)=>Math.abs(b.net)-Math.abs(a.net)).slice(0,12)){const g=svg('g');g.append(svg('rect',{x:1302,y:y(d.strike+basis)-5,width:10,height:10,fill:'#a7c9ef'}));const cells=(depth.data.rows||[]).filter(r=>r.strike===d.strike);tip(g,'Depth View · '+priceText(d.strike+basis)+' '+read.instrument,['SPX '+d.strike+' · net '+signed(d.net)+' OD units',...cells.slice(0,4).map(r=>r.expirationDate+': '+signed(r.net))],()=>inspectSource(depth,{title:'Depth View · '+priceText(d.strike+basis)+' '+read.instrument,facts:['SPX '+d.strike+' · net '+signed(d.net)+' OD units',...cells.slice(0,6).map(r=>r.expirationDate+': '+signed(r.net))]}));root.append(g);}
+  const levels=a.levels.filter(l=>l.price>=min&&l.price<=max).sort((a,b)=>b.price-a.price);
+  const labelYs=labelPositions(levels.map(l=>y(l.price)),top+24,bottom-24,66);
+  for(const [index,l]of levels.entries()){
+   const yy=y(l.price),ly=labelYs[index],g=svg('g',{'data-level-id':l.id}),d=levelDetails(l,a),items=levelConfluence(read,l),label=confluenceLabel(items),decision=l.role==='structure';
+   const color=l.kind==='support'?'#40ffc1':l.kind==='resistance'?'#ff5e90':'#ffe16a';
+   g.append(svg('line',{x1:10,x2:1330,y1:yy,y2:yy,stroke:color,'stroke-width':decision?4:1.5,opacity:decision?1:.6}));
+   if(Math.abs(ly-yy)>1)g.append(svg('path',{d:`M1330,${yy} L1344,${yy} L1350,${ly}`,stroke:color,'stroke-width':1,fill:'none'}));
+   g.append(svg('rect',{x:1350,y:ly-26,width:294,height:54,rx:5,fill:'#0a2548',stroke:color,'stroke-opacity':.6}));
+   const heading=svg('text',{x:1360,y:ly-9,fill:color,'font-size':15,'font-weight':750},priceText(l.price));
+   if(label.stars)heading.append(svg('tspan',{fill:'#ffd34f',dx:9,class:'wb-confluence-stars'},label.stars));
+   g.append(heading,svg('text',{x:1360,y:ly+7,fill:'#eff8ff','font-size':12,'font-weight':650},d.name.length>38?d.name.slice(0,37)+'…':d.name));
+   if(label.text)g.append(svg('text',{x:1360,y:ly+21,fill:'#aee9df','font-size':10},label.text.length>48?label.text.slice(0,47)+'…':label.text));
+   tip(g,d.name+' · '+priceText(l.price),[...(label.text?[label.text]:[]),d.derivation,...items.filter(i=>i.effect==='supports'&&!i.coordinateOnly).slice(0,3).map(i=>i.observation)],()=>inspectLevel(l));root.append(g);
+  }
+  for(const s of a.scenarios||[]){
+   const route=scenarioRoute(s,a.levels,a.checkpoints);if(!route.ready)continue;
+   const x=({up:1322,down:1332,neutral:1342})[s.direction],c=({up:'#40ffc1',down:'#ff5e90',neutral:'#ffe16a'})[s.direction];
+   for(const [i,stage]of route.stages.entries()){
+    if(stage.from.price<min||stage.from.price>max||stage.to.price<min||stage.to.price>max)continue;
+    const path=svg('path',{d:`M${x},${y(stage.from.price)} L${x},${y(stage.to.price)}`,stroke:c,'stroke-width':2.5,fill:'none','marker-end':'url(#board-arrow-'+s.direction+')',...(i?{'stroke-dasharray':'5 4'}:{})}),conditions=i?s.continuation:s;
+    tip(path,s.direction+' conditional path',[conditions.condition,'Confirm: '+conditions.confirmation,'Invalidation: '+conditions.invalidation],()=>inspectScenario?inspectScenario(s):inspectLevel(stage.from));root.append(path);
+    for(const cp of stage.checks){const dot=svg('circle',{cx:x,cy:y(cp.price),r:4,fill:'#071b36',stroke:c,'stroke-width':2});tip(dot,'Checkpoint · '+priceText(cp.price)+' · '+levelDetails(cp,a).name,[cp.evidence,cp.watch],()=>inspectLevel(cp));root.append(dot);}
+   }
+  }
+  if(Number.isFinite(last))root.append(svg('line',{x1:10,x2:1645,y1:y(last),y2:y(last),stroke:'#2ce2ff','stroke-width':2,'stroke-dasharray':'5 4'}),svg('text',{x:1090,y:y(last)-7,fill:'#42e8ff','font-size':14,'font-weight':700},'Observed '+priceText(last)));
+  plot.append(root);
+ }
+ range.onchange=draw;draw();
+ const legend=node('p',undefined,'wb-board-legend');legend.append(node('span','★ 3 supporting families     ★★ 4 or more','wb-confluence-stars'),node('span',' · Repeated views count once. Hover for the contribution; click for complete evidence.'));host.append(legend);
+ const detail=node('details',undefined,'wb-board-method');detail.append(node('summary','How the chart combines sources'),node('p','Stars count distinct supporting families, not trade probability. Conflicting, unavailable and coordinate-only evidence stays in the inspector. Each exposure column keeps its own scale and units. SPY dark-pool prints remain in the evidence inventory until a verified SPY-to-ES mapping is available.','muted'));host.append(detail);
+}

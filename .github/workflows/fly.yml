@@ -20,7 +20,7 @@ jobs:
       - name: Run checks
         run: |
           node --test
-          python3 -m unittest discover -s test -p test_databento_worker.py
+          python3 -m unittest discover -s test -p 'test_*.py'
       - name: Verify packaged app starts
         run: |
           docker build -t greeksdesk-smoke .

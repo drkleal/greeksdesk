@@ -7,6 +7,7 @@ import re
 import sys
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
+from es_profile import read_profile
 
 NY = ZoneInfo('America/New_York')
 UTC = timezone.utc
@@ -150,6 +151,12 @@ def read(request):
                                                   result.get('estimatedHistoryCostUSD', 0))
     else:
         result['priorContext'] = {'available': False, 'message': 'Earlier ES history availability could not be checked.'}
+
+    if request.get('cached_profile_contract') == raw_symbol:
+        result['profileReused'] = True
+    elif available and request.get('cash_close'):
+        spent = result.get('estimatedHistoryCostUSD', 0) + result.get('priorContext', {}).get('estimatedCostUSD', 0)
+        result['volumeProfile'] = read_profile(historical, raw_symbol, start, end, available, parse_time(request['cash_close']), spent)
 
     # Live capture is short-lived and invoked only by an explicit update cycle.
     # It replays one minute, then accepts a fresh completed one-second trade bar.

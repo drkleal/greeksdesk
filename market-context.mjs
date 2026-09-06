@@ -1,4 +1,5 @@
 // Fixed, documented Quant Data endpoints. Credentials never leave the server response boundary.
+import {collectQuantPanels} from './quant-panels.mjs';
 const object=v=>v&&typeof v==='object'&&!Array.isArray(v);
 const finite=Number.isFinite;
 // Quant Data omits a leg when it has no exposure. Explicit null/invalid values
@@ -9,24 +10,27 @@ function legs(row,callKey,putKey){
  const call=value(callKey),put=value(putKey);
  return {call,put,net:call!==null&&put!==null?call+put:null,omitted:Number(!Object.hasOwn(row,callKey))+Number(!Object.hasOwn(row,putKey))};
 }
-export function exposureSnapshot(payload,sessionDate){
+export function exposureSnapshot(payload,sessionDate,representationMode='RAW'){
  const root=payload?.data?.SPX;if(!object(root?.exposureMap))throw Error('Unrecognized exposure response');
- const strikes=new Map();let incomplete=0,omitted=0;
+ const strikes=new Map(),byExpiration=[];let incomplete=0,omitted=0;
  const zeroDteAvailable=!!sessionDate&&Object.hasOwn(root.exposureMap,sessionDate);
  for(const [expiry,rows] of Object.entries(root.exposureMap)){
   if(!object(rows))throw Error('Unrecognized expiry rows');
+  let expiryCall=0,expiryPut=0,expiryComplete=true;
   for(const [strike,row]of Object.entries(rows)){
    if(!finite(Number(strike)))throw Error('Invalid strike');
    const entry=legs(row,'callExposure','putExposure');if(entry.net===null)incomplete++;omitted+=entry.omitted;
+   expiryCall+=entry.call??0;expiryPut+=entry.put??0;expiryComplete&&=entry.net!==null;
    const total=strikes.get(strike)||{strike:Number(strike),call:0,put:0,complete:true,expirations:[],zeroDte:null};
    if(expiry===sessionDate)total.zeroDte={call:entry.call,put:entry.put,net:entry.net};
    total.call+=entry.call??0;total.put+=entry.put??0;total.complete&&=entry.net!==null;total.expirations.push(expiry);strikes.set(strike,total);
   }
+  byExpiration.push({expirationDate:expiry,call:expiryComplete?expiryCall:null,put:expiryComplete?expiryPut:null,net:expiryComplete?expiryCall+expiryPut:null});
  }
  const all=[...strikes.values()].map(r=>({...r,call:r.complete?r.call:null,put:r.complete?r.put:null,net:r.complete?r.call+r.put:null}));
  const stockPrice=finite(root.stockPrice)?root.stockPrice:null;
  return {normalizationVersion:2,stockPrice,strikeCount:all.length,incompleteLegPairs:incomplete,omittedZeroLegs:omitted,
-  ladderVersion:1,representationMode:'RAW',zeroDteAvailable,zeroDteDate:sessionDate||null,
+  ladderVersion:1,representationMode,byExpiration,zeroDteAvailable,zeroDteDate:sessionDate||null,
   ladder:stockPrice===null?[]:all.filter(r=>Math.abs(r.strike-stockPrice)<=150).sort((a,b)=>Math.abs(a.strike-stockPrice)-Math.abs(b.strike-stockPrice)).slice(0,81).sort((a,b)=>a.strike-b.strike),
   ladderScope:'Up to 81 nearest strikes within 150 SPX points. All expirations and a separate same-session expiration slice; missing rows are not inferred.',
   strongest:all.filter(r=>r.net!==null).sort((a,b)=>Math.abs(b.net)-Math.abs(a.net)).slice(0,12),
@@ -71,16 +75,18 @@ export function createMarketContext({env=process.env,request=fetch}={}){
   }
   try{
    const greekSources=await Promise.all(['GAMMA','DELTA','VANNA','CHARM'].map(async greek=>{
-    const snapshot=await post('/v1/options/tool/exposure-by-strike',{sessionDate:date,greekMode:greek,representationMode:'RAW',filter:{ticker:'SPX'}},p=>exposureSnapshot(p,date));
+    const snapshot=await post('/v1/options/tool/exposure-by-strike',{sessionDate:date,greekMode:greek,representationMode:'PER_ONE_PERCENT_MOVE',filter:{ticker:'SPX'}},p=>exposureSnapshot(p,date,'PER_ONE_PERCENT_MOVE'));
     let intervals;
     if(['GAMMA','DELTA'].includes(greek))intervals=await post('/v1/options/tool/interval-map',{sessionDate:date,greekMode:greek,aggregationPeriod:'5m',filter:{ticker:'SPX'}},p=>({buckets:intervalPath(p),units:'Provider interval-map units; not assumed equal to raw exposure-by-strike.',limitation:'Separate time buckets, never a cumulative current exposure. Changes reflect provider aggregates, not verified dealer trades.'}));
-    return {id:'qd-'+greek.toLowerCase(),title:'Quant Data · SPX '+greek+' exposure',sessionDate:date,capturedAt:checkedAt,url:'https://v3.quantdata.us/',data:{ticker:'SPX',metric:greek,sessionDate:date,scope:'All expirations · raw exposure by strike',checkedAt,...snapshot,...(intervals?{intervals}:{})}};
+    return {id:'qd-'+greek.toLowerCase(),title:'Quant Data · SPX '+greek+' exposure',sessionDate:date,capturedAt:checkedAt,url:'https://v3.quantdata.us/',data:{ticker:'SPX',family:greek.toLowerCase(),metric:greek,sessionDate:date,scope:'All expirations · per 1% move · by strike and expiration; separate 0DTE slice',checkedAt,...snapshot,...(intervals?{intervals}:{})}};
    }));
    const equity=await Promise.all([
     ['dark-pool','SPY dark-pool levels','/v1/equities/tool/dark-pool-levels',{sessionDateRange:{startDate:date,endDate:date},filter:{ticker:'SPY'}},darkPoolLevels],
     ['dark-flow','SPY dark-pool activity','/v1/equities/tool/dark-flow',{sessionDate:date,aggregationPeriod:'5m',filter:{ticker:'SPY'}},darkFlow]
    ].map(async([id,title,path,body,normalize])=>({id:'qd-'+id,title:'Quant Data · '+title,sessionDate:date,capturedAt:checkedAt,url:'https://v3.quantdata.us/',data:{ticker:'SPY',sessionDate:date,checkedAt,contextOnly:true,...await post(path,body,normalize)}})));
-   const result={ok:true,count:greekSources.length+equity.length,sources:[...greekSources,...equity],requestCount:calls,checkedAt};cache.set(date,{time:Date.now(),result});if(cache.size>8)cache.delete(cache.keys().next().value);return result;
+   const panels=await collectQuantPanels(date,post,checkedAt,greekSources.find(s=>Number.isFinite(s.data.stockPrice))?.data.stockPrice??null);
+   const sources=[...greekSources,...equity,...panels];
+   const result={ok:true,count:sources.length,sources,requestCount:calls,checkedAt};cache.set(date,{time:Date.now(),result});if(cache.size>8)cache.delete(cache.keys().next().value);return result;
   }finally{pending=null;}
  };
 }

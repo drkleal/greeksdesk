@@ -4,7 +4,7 @@ import {levelDetails,priceText,levelColors,directionTitle,decisionZones} from '.
 export function evidenceCoverage(read){
  const a=read.result.analysis,items=[];
  for(const source of read.sources){
-  if(source.data){const insight=a.sources.find(s=>s.id===source.id),partial=source.data.incompleteLegPairs>0||source.data.intervals?.buckets?.some(b=>b.incomplete>0);items.push({id:source.id,source,insight,title:source.title,status:source.data.available===false?'unavailable':insight?(partial?'partial':'reviewed'):'not-reviewed'});}
+  if(source.data){const insight=a.sources.find(s=>s.id===source.id),partial=source.data.partial||source.data.incompleteLegPairs>0||source.data.intervals?.buckets?.some(b=>b.incomplete>0);items.push({id:source.id,source,insight,title:source.title,status:source.data.available===false?'unavailable':insight?(partial?'partial':'reviewed'):'not-reviewed'});}
   if(source.image){
    const panels=(a.panels||[]).filter(p=>p.sourceId===source.id);
    for(const p of panels)items.push({id:p.id,source,panel:p,title:p.title,status:p.status==='excluded'?'excluded':p.dateRole==='projected_session'?'forward-model':p.status==='context'?'context':'reviewed'});
@@ -22,7 +22,7 @@ export function renderEvidence(read,{panelButton,chartButton,onLevel}){
   const card=node('details',undefined,'evidence-card '+item.status);card.dataset.evidenceId=item.id;
   const top=node('summary'),label=node('span',item.title),badge=node('small',({'not-reviewed':'Not reviewed','forward-model':'Next-session model',partial:'Partial data',reviewed:'Reviewed',context:'Context',excluded:'Excluded',unavailable:'Unavailable'})[item.status],'evidence-badge');top.append(label,badge);card.append(top);
   const p=item.panel,s=item.insight;
-  if(item.status==='partial')card.append(node('p','Some exposure legs are missing. Rankings cover complete strikes only; this feed does not establish the full-market exposure profile.','warn'));
+  if(item.status==='partial')card.append(node('p',item.source.data?.incompleteLegPairs>0?'Some exposure legs are missing. Rankings cover complete strikes only.':'This feed covers a bounded sample or window. Check its stated scope before comparing it with other sources.','warn'));
   top.append(node('span',p?.shows||s?.shows||item.source.data?.message||'Supplied without a returned finding. Not counted as support.','evidence-observation'));
   card.append(node('p',evidenceMetadata(item.source,p),'muted'));
   if(p?.reason||s?.importance)card.append(node('h3','Why it matters'),node('p',p?.reason||s.importance));

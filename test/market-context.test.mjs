@@ -54,9 +54,9 @@ test('historical dark-pool context excludes request-time price',()=>{
 });
 test('market context is bounded, caches results, reports failures, and never returns credentials',async()=>{
  const calls=[];const fetcher=createMarketContext({env:{QUANT_DATA_API_KEY:'private-key'},request:async(url,options)=>{calls.push([url,JSON.parse(options.body)]);assert.equal(options.headers.Authorization,'Bearer private-key');return {ok:false,status:422};}});
- const first=await fetcher('2026-09-04');assert.equal(first.requestCount,8);assert.equal(first.sources.length,6);assert.ok(first.sources.every(s=>s.data.available===false));assert.ok(!JSON.stringify(first).includes('private-key'));
- assert.equal((await fetcher('2026-09-04')).cached,true);assert.equal(calls.length,8);assert.ok(calls.every(([url])=>url.startsWith('https://api.quantdata.us/v1/')));
- assert.equal(calls.filter(([,body])=>body.filter.ticker==='SPY').length,2);
+ const first=await fetcher('2026-09-04');assert.equal(first.requestCount,25);assert.equal(first.sources.length,24);assert.ok(first.sources.every(s=>s.data.available===false));assert.ok(!JSON.stringify(first).includes('private-key'));
+ assert.equal((await fetcher('2026-09-04')).cached,true);assert.equal(calls.length,25);assert.ok(calls.every(([url])=>url.startsWith('https://api.quantdata.us/v1/')));
+ assert.equal(calls.filter(([,body])=>body.filter.ticker==='SPY').length,3);
 });
 test('coverage exposes captured panels omitted from the analysis and unavailable API feeds',()=>{
  const read={sources:[{id:'chart',image:'image',capturedPanels:[{id:'panel-1',title:'Gamma'},{id:'panel-2',title:'Charm'}]},{id:'api',title:'API',data:{available:false}}],result:{analysis:{sources:[{id:'api'}],panels:[{id:'p',sourceId:'chart',capturedPanelId:'panel-1',title:'Gamma',status:'context'}]}}};

@@ -1,5 +1,6 @@
 import http from 'node:http';
 import {createMarketContext} from './market-context.mjs';
+import {createOptionsDepthContext} from './optionsdepth-context.mjs';
 import {createDatabento} from './databento.mjs';
 import {validateChartContext} from './chart-context.mjs';
 import {readBasis,BasisReadError,calculateBasis,cashBasisReference} from './basis.mjs';
@@ -16,9 +17,10 @@ function matches(a, b) {
 }
 
 export function createServer(password = process.env.DESK_PASSWORD) {
-  const baseCheck = createProviderChecks(), marketContext = createMarketContext(), esData=createDatabento();
+  const baseCheck = createProviderChecks(), marketContext = createMarketContext(), odContext=createOptionsDepthContext(), esData=createDatabento();
   const checkProvider=async(provider,date,selection)=>{
     if(provider==='quantdata-context')return marketContext(date);
+    if(provider==='optionsdepth-context')return odContext(date,selection);
     if(provider==='databento'){
       const result=await esData(date,selection?.symbol||undefined);
       if(result.ok){const spx=await baseCheck('quantdata',date);result.basisReference=cashBasisReference(result,spx,date);try{if(result.freshness==='stale')throw new BasisReadError('ES price is not fresh. No current basis applied.');result.basisResult=calculateBasis({instrument:'ES',price:result.latestPrice,timestamp:result.latestTimestamp,contract:result.contract},spx,date);}catch(error){result.basisResult={ok:false,message:error instanceof BasisReadError?error.message:'No matching SPX price.'};}}
@@ -59,7 +61,7 @@ export function createServer(password = process.env.DESK_PASSWORD) {
       if(req.method!=='POST'||req.headers['x-greeksdesk-action']!=='manual-check'||req.headers['sec-fetch-site']==='cross-site') {res.writeHead(403);return res.end('Same-origin action required');}
       try {
         const chunks=[];let size=0;
-        for await (const chunk of req){size+=chunk.length;if(size>8000000){res.writeHead(413);res.end('Chart packet too large');return;}chunks.push(chunk);}
+        for await (const chunk of req){size+=chunk.length;if(size>26000000){res.writeHead(413);res.end('Chart packet too large');return;}chunks.push(chunk);}
         const result=await analyze(JSON.parse(Buffer.concat(chunks).toString('utf8')));
         res.writeHead(200,{'Content-Type':'application/json'});return res.end(JSON.stringify(result));
       }catch{res.writeHead(400,{'Content-Type':'application/json'});return res.end(JSON.stringify({ok:false,message:'Check the source dates, chart sizes and instrument settings.'}));}
@@ -82,7 +84,7 @@ export function createServer(password = process.env.DESK_PASSWORD) {
     }
     const scripts = {'/evidence-policy.mjs':'./public/evidence-policy.mjs','/plan.mjs':'./public/plan.mjs','/evidence.mjs':'./public/evidence.mjs','/session.mjs':'./public/session.mjs','/connector.mjs':'./public/connector.mjs','/desk.mjs':'./public/desk.mjs','/desk.css':'./public/desk.css','/map.mjs':'./public/map.mjs','/capture.mjs':'./public/capture.mjs','/exposure.js':'./public/exposure.js','/connections.mjs':'./public/connections.mjs','/update-loop.mjs':'./public/update-loop.mjs'};
     scripts['/price-evidence.mjs']='./public/price-evidence.mjs';
-    for(const asset of ['workbench.mjs','confluence.mjs','workbench.css'])scripts['/'+asset]='./public/'+asset;
+    for(const asset of ['workbench.mjs','confluence.mjs','workbench.css','chart-intake.mjs','level-board.mjs'])scripts['/'+asset]='./public/'+asset;
     if (!['/', '/index.html', '/preview', '/connections', '/connector', '/chart-connector.zip', ...Object.keys(scripts)].includes(req.url)) {
       res.writeHead(404);
       return res.end('Not found');

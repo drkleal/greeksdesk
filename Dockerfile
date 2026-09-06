@@ -7,7 +7,7 @@ ENV NODE_ENV=production PORT=8080
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 COPY --chown=node:node package.json *.mjs ./
-COPY --chown=node:node databento_worker.py ./
+COPY --chown=node:node databento_worker.py es_profile.py ./
 COPY --chown=node:node public ./public
 USER node
 EXPOSE 8080

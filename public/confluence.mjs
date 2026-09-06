@@ -21,7 +21,7 @@ export function familyFor(title=''){
 }
 export function familyInventory(read){
  const coverage=evidenceCoverage(read);
- return families.map(f=>({...f,items:coverage.filter(i=>familyFor(i.title)===f.id)}));
+ return families.map(f=>({...f,items:coverage.filter(i=>(i.source?.data?.family||familyFor(i.title))===f.id||(f.id==='acceptance'&&i.source?.id==='databento'&&i.source.data?.volumeProfile?.available))}));
 }
 export function conversionFor(read){
  if(read.instrument==='SPX')return {kind:'native',basis:0,label:'Native SPX coordinates'};
@@ -40,10 +40,13 @@ export function familyObservation(read,id){
   const d=get('qd-'+id),rows=(d?.nearby||[]).filter(r=>Number.isFinite(r.net));
   if(!rows.length)return null;
   const positive=rows.filter(r=>r.net>0).sort((a,b)=>b.net-a.net)[0],negative=rows.filter(r=>r.net<0).sort((a,b)=>a.net-b.net)[0];
-  return [positive?'+'+compact(positive.net)+' @ '+positive.strike:null,negative?compact(negative.net)+' @ '+negative.strike:null].filter(Boolean).join(' / ')+' · SPX RAW';
+  return [positive?'+'+compact(positive.net)+' @ '+positive.strike:null,negative?compact(negative.net)+' @ '+negative.strike:null].filter(Boolean).join(' / ')+' · SPX '+(d.representationMode==='PER_ONE_PERCENT_MOVE'?'per 1% move':'RAW');
  }
  if(id==='flow'){const d=get('quantdata');return Number.isFinite(d?.callPremium)&&Number.isFinite(d?.putPremium)?'Net premiums · calls '+compact(d.callPremium)+' / puts '+compact(d.putPremium):null;}
  if(id==='institutional'){const d=get('qd-dark-flow');return Number.isFinite(d?.notionalTotal)?'SPY reported notional '+compact(d.notionalTotal)+' · direction unverified':null;}
+ if(id==='acceptance'){const d=get('databento')?.volumeProfile;return d?.available?d.nodes.map(n=>n.kind+' '+n.price).join(' · '):null;}
+ if(id==='volatility'){const d=get('qd-iv-rank'),legs=d?.legs;if(!legs)return null;return ['CALL','PUT'].filter(k=>Number.isFinite(legs[k]?.rankPercent)).map(k=>k.toLowerCase()+' IV rank '+legs[k].rankPercent.toFixed(1)+'%').join(' · ');}
+ if(id==='positioning'){const d=get('qd-oi-strike'),rows=(d?.rows||[]).filter(r=>Number.isFinite(r.callOpenInterest)&&Number.isFinite(r.putOpenInterest)),top=rows.sort((a,b)=>b.callOpenInterest+b.putOpenInterest-a.callOpenInterest-a.putOpenInterest)[0];return top?'Largest supplied OI '+compact(top.callOpenInterest+top.putOpenInterest)+' @ SPX '+top.strike:null;}
  return null;
 }
 export function exposureColumns(read){
@@ -51,12 +54,14 @@ export function exposureColumns(read){
  for(const [id,title,family,zero] of [['qd-gamma','QD Gamma · all','gamma',false],['qd-gamma','QD Gamma · 0DTE','gamma',true],['qd-delta','QD DEX','delta',false],['qd-vanna','QD Vanna','vanna',false],['qd-charm','QD Charm','charm',false]]){
   const source=read.sources.find(s=>s.id===id),d=source?.data;
   const rows=d?.available===false?[]:(d?.ladder||[...new Map([...(d?.nearby||[]),...(d?.strongest||[])].map(r=>[r.strike,r])).values()]);
-  columns.push({id:id+(zero?'-0dte':''),title,family,source,unit:'RAW',scope:zero?'Expiration '+(d?.zeroDteDate||read.date):'All expirations',partial:!d?.ladder,
+  columns.push({id:id+(zero?'-0dte':''),title,family,source,unit:d?.representationMode==='PER_ONE_PERCENT_MOVE'?'Per 1% move':'RAW',scope:zero?'Expiration '+(d?.zeroDteDate||read.date):'All expirations',partial:!d?.ladder,
    rows:rows.map(r=>({price:r.strike,call:zero?r.zeroDte?.call:r.call,put:zero?r.zeroDte?.put:r.put,net:zero?r.zeroDte?.net:r.net})).filter(r=>Number.isFinite(r.net))});
  }
  const od=read.sources.find(s=>s.id==='gamma'),d=od?.data;
  columns.push({id:'od-gamma',title:'OD Gamma model',family:'gamma',source:od,unit:'Provider model units',scope:d?.actualSlot||'Model sample',partial:false,
   rows:d?.ok===false?[]:(d?.rows||[]).filter(r=>Number.isFinite(r.price)&&Number.isFinite(r.value)).map(r=>({price:r.price,net:r.value}))});
+ for(const [id,title,family]of [['od-gex-mm-strike','OD Dealer Gamma','gamma'],['od-dex-mm-strike','OD Dealer DEX','delta'],['od-vex-mm-strike','OD Dealer Vanna','vanna']]){const source=read.sources.find(s=>s.id===id),data=source?.data;if(source)columns.push({id,title,family,source,unit:'OD metric units',scope:data.actualSlot||data.requestedSlot,rows:data.available===false?[]:(data.rows||[]).map(r=>({price:r.strike,net:r.value}))});}
+ const oi=read.sources.find(s=>s.id==='qd-oi-strike');if(oi)columns.push({id:'qd-oi-strike',title:'QD Open Interest',family:'positioning',source:oi,unit:'Contracts',scope:oi.data.scope,rows:(oi.data.available===false?[]:oi.data.rows||[]).map(r=>({price:r.strike,call:r.callOpenInterest,put:r.putOpenInterest,net:Number.isFinite(r.callOpenInterest)&&Number.isFinite(r.putOpenInterest)?r.callOpenInterest+r.putOpenInterest:null})).filter(r=>Number.isFinite(r.net))});
  return columns;
 }
 export function sanitizeConfluence(analysis,packet){
@@ -99,4 +104,21 @@ export function levelConfluence(read,level){
 export function confluenceSummary(items){
  const support=new Set(items.filter(i=>i.effect==='supports').map(i=>i.family)),oppose=new Set(items.filter(i=>i.effect==='opposes').map(i=>i.family));
  return {support:[...support],oppose:[...oppose],context:[...new Set(items.filter(i=>i.effect==='context').map(i=>i.family))]};
+}
+
+// Stars describe distinct supporting evidence families, never a win probability.
+// Duplicated provider views, coordinate overlaps, and conflicted families cannot
+// make a level appear more strongly confirmed.
+export function confluenceLabel(items){
+ const opposed=new Set(items.filter(i=>i.effect==='opposes').map(i=>i.family));
+ const supporting=items.filter(i=>i.effect==='supports'&&!i.coordinateOnly&&!opposed.has(i.family));
+ const ids=[...new Set(supporting.map(i=>i.family))];
+ const names={price:'ES structure',gamma:'GEX',delta:'DEX',vanna:'Vanna',charm:'Charm',flow:'Flow',institutional:'Institutional prints',acceptance:'Volume profile',volatility:'Volatility',positioning:'Open interest'};
+ const labels=ids.map(id=>{
+  if(id!=='acceptance')return names[id]||id;
+  const text=supporting.filter(i=>i.family===id).map(i=>[i.observation,i.panel?.title,i.source?.title].filter(Boolean).join(' ')).join(' ');
+  const features=['VWAP','POC','HVN','LVN'].filter(name=>new RegExp('\\b'+name+'\\b','i').test(text));
+  return features.length?features.join(' / '):names[id];
+ });
+ return {count:ids.length,families:ids,labels,text:labels.join(' · '),stars:ids.length>=4?'★★':ids.length===3?'★':''};
 }
