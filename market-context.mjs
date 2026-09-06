@@ -9,21 +9,26 @@ function legs(row,callKey,putKey){
  const call=value(callKey),put=value(putKey);
  return {call,put,net:call!==null&&put!==null?call+put:null,omitted:Number(!Object.hasOwn(row,callKey))+Number(!Object.hasOwn(row,putKey))};
 }
-export function exposureSnapshot(payload){
+export function exposureSnapshot(payload,sessionDate){
  const root=payload?.data?.SPX;if(!object(root?.exposureMap))throw Error('Unrecognized exposure response');
  const strikes=new Map();let incomplete=0,omitted=0;
+ const zeroDteAvailable=!!sessionDate&&Object.hasOwn(root.exposureMap,sessionDate);
  for(const [expiry,rows] of Object.entries(root.exposureMap)){
   if(!object(rows))throw Error('Unrecognized expiry rows');
   for(const [strike,row]of Object.entries(rows)){
    if(!finite(Number(strike)))throw Error('Invalid strike');
    const entry=legs(row,'callExposure','putExposure');if(entry.net===null)incomplete++;omitted+=entry.omitted;
-   const total=strikes.get(strike)||{strike:Number(strike),call:0,put:0,complete:true,expirations:[]};
+   const total=strikes.get(strike)||{strike:Number(strike),call:0,put:0,complete:true,expirations:[],zeroDte:null};
+   if(expiry===sessionDate)total.zeroDte={call:entry.call,put:entry.put,net:entry.net};
    total.call+=entry.call??0;total.put+=entry.put??0;total.complete&&=entry.net!==null;total.expirations.push(expiry);strikes.set(strike,total);
   }
  }
- const all=[...strikes.values()].map(r=>({...r,net:r.complete?r.call+r.put:null}));
+ const all=[...strikes.values()].map(r=>({...r,call:r.complete?r.call:null,put:r.complete?r.put:null,net:r.complete?r.call+r.put:null}));
  const stockPrice=finite(root.stockPrice)?root.stockPrice:null;
  return {normalizationVersion:2,stockPrice,strikeCount:all.length,incompleteLegPairs:incomplete,omittedZeroLegs:omitted,
+  ladderVersion:1,representationMode:'RAW',zeroDteAvailable,zeroDteDate:sessionDate||null,
+  ladder:stockPrice===null?[]:all.filter(r=>Math.abs(r.strike-stockPrice)<=150).sort((a,b)=>Math.abs(a.strike-stockPrice)-Math.abs(b.strike-stockPrice)).slice(0,81).sort((a,b)=>a.strike-b.strike),
+  ladderScope:'Up to 81 nearest strikes within 150 SPX points. All expirations and a separate same-session expiration slice; missing rows are not inferred.',
   strongest:all.filter(r=>r.net!==null).sort((a,b)=>Math.abs(b.net)-Math.abs(a.net)).slice(0,12),
   nearby:stockPrice===null?[]:all.filter(r=>r.net!==null&&Math.abs(r.strike-stockPrice)<=60).sort((a,b)=>Math.abs(b.net)-Math.abs(a.net)).slice(0,12),nearbyBandPoints:60,
   limitation:'Quant Data documents omitted legs as no exposure (zero). Explicit null or invalid legs remain unknown and exclude that strike from rankings. All expirations; nearby ranks are within 60 SPX points of stockPrice. Session latest snapshot; provider response supplies no observation timestamp.'};
@@ -66,7 +71,7 @@ export function createMarketContext({env=process.env,request=fetch}={}){
   }
   try{
    const greekSources=await Promise.all(['GAMMA','DELTA','VANNA','CHARM'].map(async greek=>{
-    const snapshot=await post('/v1/options/tool/exposure-by-strike',{sessionDate:date,greekMode:greek,representationMode:'RAW',filter:{ticker:'SPX'}},exposureSnapshot);
+    const snapshot=await post('/v1/options/tool/exposure-by-strike',{sessionDate:date,greekMode:greek,representationMode:'RAW',filter:{ticker:'SPX'}},p=>exposureSnapshot(p,date));
     let intervals;
     if(['GAMMA','DELTA'].includes(greek))intervals=await post('/v1/options/tool/interval-map',{sessionDate:date,greekMode:greek,aggregationPeriod:'5m',filter:{ticker:'SPX'}},p=>({buckets:intervalPath(p),units:'Provider interval-map units; not assumed equal to raw exposure-by-strike.',limitation:'Separate time buckets, never a cumulative current exposure. Changes reflect provider aggregates, not verified dealer trades.'}));
     return {id:'qd-'+greek.toLowerCase(),title:'Quant Data · SPX '+greek+' exposure',sessionDate:date,capturedAt:checkedAt,url:'https://v3.quantdata.us/',data:{ticker:'SPX',metric:greek,sessionDate:date,scope:'All expirations · raw exposure by strike',checkedAt,...snapshot,...(intervals?{intervals}:{})}};

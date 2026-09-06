@@ -1,6 +1,19 @@
 import {validateChartContext,confirmedTimestamp} from './chart-context.mjs';
 import {isCashObservation} from './public/session.mjs';
 export class BasisReadError extends Error {}
+// A dated cash anchor is useful for model comparison after hours, but is never
+// substituted for the current quote's basis or applied to executable prices.
+export function cashBasisReference(es,spx,date){
+ if(!es?.ok||es.ticker!=='ES'||!/^ES[HMUZ]\d{1,2}$/.test(es.contract))return null;
+ const rows=(es.priceObservations||[]).filter(r=>Number.isFinite(r.price)&&isCashObservation(r.timestamp,date)).sort((a,b)=>Date.parse(b.timestamp)-Date.parse(a.timestamp));
+ for(const row of rows){
+  try{const match=calculateBasis({...row,instrument:'ES',contract:es.contract},spx,date);
+   if(Math.abs(Date.parse(match.esTime)-Date.parse(match.spxTime))>60000)continue;
+   return {...match,kind:'cash_anchor',sessionDate:date,usage:'Dated model comparison only; not a current or after-hours basis.'};
+  }catch{/* Try an earlier cash observation, without another provider call. */}
+ }
+ return null;
+}
 export function calculateBasis(observation,spx,date){
  if(!observation||observation.instrument!=='ES'||!Number.isFinite(observation.price)||observation.price<=0||typeof observation.timestamp!=='string'||!observation.timestamp.endsWith('Z'))throw new BasisReadError('The screenshot needs a readable ES price and timestamp with a known timezone.');
  if(!isCashObservation(observation.timestamp,date))throw new BasisReadError('This ES observation is outside the supported SPX cash session. A frozen SPX close cannot establish a simultaneous basis. Native ES chart levels can still be analyzed.');
