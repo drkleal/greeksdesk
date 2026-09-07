@@ -20,6 +20,13 @@ export function renderVerification(read,{inspectLevel}={}){
  const v=verificationStatus(read),box=node('details',undefined,'wb-verification'),summary=node('summary');
  summary.append(node('strong','Plan verification'),node('span',v.findings+'/'+v.total+' source findings'),node('span',v.matched+'/'+v.cited+' cited ES prices matched'),node('span','Trading edge: not established','wb-unvalidated'));
  box.append(summary);
+ const review=read.result.review;
+ if(review&&Array.isArray(review.corrections)){
+  const record=node('section',undefined,'wb-review-record');record.append(node('h3','Review of this saved analysis'));
+  if(typeof review.method==='string')record.append(node('p',review.method));
+  const list=node('ul');for(const correction of review.corrections.filter(c=>typeof c==='string'))list.append(node('li',correction));record.append(list);
+  for(const limitation of (review.limitations||[]).filter(c=>typeof c==='string'))record.append(node('p',limitation));box.append(record);
+ }
  const grid=node('div',undefined,'wb-verification-grid');
  const section=(title,text)=>{const c=node('section');c.append(node('h3',title),node('p',text));grid.append(c);return c;};
  section('1 · Source and price checks',v.findings+' returned findings; '+v.pending+' awaiting analysis, '+v.unavailable+' unavailable, '+v.partial+' partial and '+v.forward+' forward-model views. '+v.matched+' of '+v.cited+' cited native ES prices match the saved source bars or trade profile. A returned finding is an analysis record, not independent confirmation that its interpretation is correct.');

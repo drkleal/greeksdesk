@@ -47,7 +47,7 @@ export function renderWorkbench(host,read,{panelButton,chartButton}={}){
  const head=el('div',undefined,'wb-heading'),title=el('div');title.append(el('span','GREEKSDESK / MARKET WORKBENCH','eyebrow'),el('h2','Evidence → levels → plan'));
  const stamps=el('div',undefined,'wb-stamps'),age=chip(read.instrument==='ES'&&feed.latestTimestamp?quoteStatus(feed):'Read snapshot');
  if(read.instrument==='ES'&&feed.latestTimestamp){age.dataset.quoteTime=feed.latestTimestamp;age.dataset.freshness=feed.freshness;}
- stamps.append(chip(read.instrument==='ES'?(feed.contract||'ES'):'SPX','#2ce2ff'),chip(read.date),age,chip('Analysis '+when(read.result.checkedAt)));head.append(title,stamps);host.append(head);
+ stamps.append(chip(read.instrument==='ES'?(feed.contract||'ES'):'SPX','#2ce2ff'),chip(read.date),age,chip('Analysis '+when(read.result.checkedAt)));if(read.result.review?.reviewedAt)stamps.append(chip('Reviewed '+when(read.result.review.reviewedAt),'#78e4ff'));head.append(title,stamps);host.append(head);
  const notice=el('p','Inputs changed · this board still shows the previous analysis. Update & analyze to rebuild it from the latest sources.','wb-read-notice');notice.hidden=true;host.append(notice);
  const thesis=el('div',undefined,'wb-thesis');thesis.append(el('strong',a.headline),el('span',conversion.label,'wb-basis'));
  if(conversion.reference)thesis.append(el('small','Anchor observations: ES '+priceText(conversion.reference.esPrice)+' at '+when(conversion.reference.esTime)+' / SPX '+priceText(conversion.reference.spxPrice)+' at '+when(conversion.reference.spxTime)+'. Approximate model overlays only.'));

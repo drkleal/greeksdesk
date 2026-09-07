@@ -14,6 +14,8 @@ Auto is OFF on page load. It runs every 5 or 10 minutes for a selected bounded s
 
 Latest 20 reads, including selected chart images, are stored in this browser's IndexedDB on this device; download a read to retain a portable copy. No cross-device history is implemented.
 
+If a completed model response fails validation, the server retains the latest rejected response and validation reason in a private temporary review file. It contains no API keys or original image payloads, is not exposed by a web route, and never replaces the displayed plan. This allows diagnosis without requesting the same analysis again; an exact immediate retry reuses the failed result for 60 seconds.
+
 ## Secrets and deployment
 
 Fly secrets: DESK_PASSWORD, QUANT_DATA_API_KEY, OPTIONSDEPTH_API_KEY, OPENAI_API_KEY, DATABENTO_API_KEY. Optional OPENAI_MODEL overrides gpt-5.4. Never place keys in browser code, source control or chat. OpenAI requests use store:false and include only selected market inputs, images and the prior same-session summary. The app does not fetch arbitrary chart URLs.
