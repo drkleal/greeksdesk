@@ -1,4 +1,5 @@
 import {node} from './map.mjs';
+import {today,esSessionDate} from './session.mjs';
 import {renderLevelBoard} from './level-board.mjs';
 import {priceText,levelDetails,scenarioRoute,quoteStatus} from './plan.mjs';
 import {appendPriceEvidence} from './price-evidence.mjs';
@@ -48,7 +49,8 @@ export function renderWorkbench(host,read,{panelButton,chartButton}={}){
  const stamps=el('div',undefined,'wb-stamps'),age=chip(read.instrument==='ES'&&feed.latestTimestamp?quoteStatus(feed):'Read snapshot');
  if(read.instrument==='ES'&&feed.latestTimestamp){age.dataset.quoteTime=feed.latestTimestamp;age.dataset.freshness=feed.freshness;}
  stamps.append(chip(read.instrument==='ES'?(feed.contract||'ES'):'SPX','#2ce2ff'),chip(read.date),age,chip('Analysis '+when(read.result.checkedAt)));if(read.result.review?.reviewedAt)stamps.append(chip('Reviewed '+when(read.result.review.reviewedAt),'#78e4ff'));head.append(title,stamps);host.append(head);
- const notice=el('p','Inputs changed · this board still shows the previous analysis. Update & analyze to rebuild it from the latest sources.','wb-read-notice');notice.hidden=true;host.append(notice);
+ const currentDate=read.instrument==='ES'?esSessionDate():today(),older=read.date<currentDate;
+ const notice=el('p',older?`Saved ${read.date} analysis · not updated for ${currentDate}. Update the session and sources before using a new trade plan.`:'Inputs changed · this board still shows the previous analysis. Update & analyze to rebuild it from the latest sources.','wb-read-notice');notice.hidden=!older;host.append(notice);
  const thesis=el('div',undefined,'wb-thesis');thesis.append(el('strong',a.headline),el('span',conversion.label,'wb-basis'));
  if(conversion.reference)thesis.append(el('small','Anchor observations: ES '+priceText(conversion.reference.esPrice)+' at '+when(conversion.reference.esTime)+' / SPX '+priceText(conversion.reference.spxPrice)+' at '+when(conversion.reference.spxTime)+'. Approximate model overlays only.'));
  host.append(thesis);

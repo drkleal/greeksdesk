@@ -35,6 +35,13 @@ export function defaultSession(now=new Date()){
  for(let i=0;i<10;i++){const candidate=new Date(Date.parse(date)-i*86400000).toISOString().slice(0,10);if(cashSession(candidate))return candidate;}
  return date;
 }
-export function initialSession(saved,now=new Date()){
- return saved?.savedOn===nyTime(now).date&&validDate(saved.date)?saved.date:defaultSession(now);
+export function initialSession(saved,now=new Date(),instrument='SPX'){
+ if(saved?.savedOn===nyTime(now).date&&validDate(saved.date))return saved.date;
+ if(instrument==='ES'){
+  // This is the observed futures window, not the exchange's holiday clearing date.
+  // Cash-market holidays must not silently select Friday for a trading Monday.
+  const session=esSessionDate(now),weekday=new Date(session+'T12:00:00Z').getUTCDay();
+  if(weekday!==0&&weekday!==6)return session;
+ }
+ return defaultSession(now);
 }

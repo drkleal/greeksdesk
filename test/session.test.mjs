@@ -6,6 +6,12 @@ test('session defaults to the last cash trading day on weekends and holidays',()
  assert.equal(initialSession(null,new Date('2026-09-07T14:00:00Z')),'2026-09-04');
  assert.equal(initialSession(null,new Date('2026-09-08T14:00:00Z')),'2026-09-08');
 });
+test('ES defaults to the observed holiday window while cash and saved choices remain separate',()=>{
+ assert.equal(initialSession(null,new Date('2026-09-07T14:00:00Z'),'ES'),'2026-09-07');
+ assert.equal(initialSession(null,new Date('2026-09-06T22:01:00Z'),'ES'),'2026-09-07');
+ assert.equal(initialSession(null,new Date('2026-09-05T14:00:00Z'),'ES'),'2026-09-04');
+ assert.equal(initialSession({date:'2026-09-04',savedOn:'2026-09-07'},new Date('2026-09-07T14:00:00Z'),'ES'),'2026-09-04');
+});
 test('same-day session choice survives reload; old choices do not carry into a new trading day',()=>{
  const saved={date:'2026-09-03',savedOn:'2026-09-05'};
  assert.equal(initialSession(saved,new Date('2026-09-06T01:00:00Z')),'2026-09-03');

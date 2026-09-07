@@ -17,6 +17,9 @@ class WorkerTests(unittest.TestCase):
         self.assertFalse(market_window(datetime(2026,9,4,22,tzinfo=timezone.utc)))
     def test_exception_text_is_not_forwarded(self):
         self.assertNotIn('private-key',safe_error(ValueError('private-key')))
+        message=safe_error(ValueError('license denied for private-key'))
+        self.assertIn('licensing',message)
+        self.assertNotIn('private-key',message)
     def test_continuous_contract_uses_supported_two_step_mapping(self):
         calls=[]
         def resolve(**args):

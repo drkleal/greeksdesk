@@ -2,6 +2,10 @@
 
 Updated September 6, 2026. The current reviewed preview uses the September 4 historical session. The complete live workflow and trading performance are not yet validated.
 
+September 7 holiday check, approximately 10:01 ET: Quant Data returned actual SPX option trades through 10:01:26.700 ET and changing Net Drift buckets. Its SPX stock reference stayed at 7,718.60 and is not a live cash observation. Gamma returned values without an observation timestamp; OI-by-expiration and SPY equity prints returned empty for September 7. OptionsDepth rejected the September 7 intraday-timeslots request (400); September 8 returned zero timeslots. Databento live ESU6 requests failed with a licensing-related BentoError; historical metadata ended at 02:01:41 ET. These are bounded checks at that time, not a continuous monitor or proof that every vendor panel has the same status.
+
+The source freshness section now separates observed trade/bucket times, stale ES quotes, unknown model update times, and unavailable providers. It refreshes independently of saved analysis. Databento licensing failures have a specific explanation without exposing SDK error text or credentials.
+
 ## Ready to review
 
 - Full-width ES map, Gamma/DEX/Vanna/OI columns, named session/profile references, source inspectors and vertical zoom.

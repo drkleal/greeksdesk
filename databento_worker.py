@@ -40,6 +40,8 @@ def market_window(now):
 
 def safe_error(exc):
     # Never relay SDK exception text: authentication errors can contain key material.
+    if 'licens' in str(exc).lower() or 'entitle' in str(exc).lower():
+        return 'Databento live-data licensing or entitlement was rejected. Check the CME GLBX.MDP3 live license in the Databento portal; a configured key does not establish live access.'
     code = getattr(exc, 'http_status', None) or getattr(exc, 'status', None) or getattr(exc, 'status_code', None)
     if code in (401, 403):
         return 'Databento denied this market-data request. Check the key and CME data entitlement.'
