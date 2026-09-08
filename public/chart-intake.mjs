@@ -19,7 +19,9 @@ export function mountChartIntake(host,{accept,remove,analyze,currentDate,locked,
   open.addEventListener('click',()=>{const d=node('dialog',undefined,'chart-viewer'),full=node('img'),close=node('button','Close');full.src=img.src;full.alt=slot.title;close.onclick=()=>d.close();d.addEventListener('close',()=>d.remove());d.append(close,node('h2',slot.title),full);document.body.append(d);d.showModal();});
   previews.set(slot.id,sync);
  }
- const run=node('button','Update & analyze all evidence','primary');run.onclick=()=>{if(!locked())analyze();};host.append(run,node('p','Include the instrument, session date, and chart time where possible. A pasted image stays fixed until you replace it; Auto updates do not refresh screenshots.','muted'));
+ const run=node('button','Update & analyze all evidence','primary');run.onclick=()=>{if(!locked())analyze();};
+ const progress=node('p','Ready. Update & analyze combines these charts with the available API data.','analysis-progress');progress.setAttribute('role','status');progress.setAttribute('aria-live','polite');
+ host.append(run,progress,node('p','Include the instrument, session date, and chart time where possible. A pasted image stays fixed until you replace it; Auto updates do not refresh screenshots.','muted'));
  loadChartDrafts(restoreDate).then(async drafts=>{for(const s of drafts)if(!versions.has(s.id)&&currentDate()===restoreDate&&!locked()&&await accept(s))previews.get(s.id)?.(s);}).catch(()=>{});
- return {syncAll:sources=>{for(const [id,sync]of previews)sync(sources.find(s=>s.id===id&&s.sessionDate===currentDate())||null);},forget:id=>versions.set(id,(versions.get(id)||0)+1)};
+ return {setProgress:text=>{progress.textContent=text;},setBusy:value=>{run.disabled=value;run.textContent=value?'Working… please wait':'Update & analyze all evidence';progress.classList.toggle('is-busy',value);},syncAll:sources=>{for(const [id,sync]of previews)sync(sources.find(s=>s.id===id&&s.sessionDate===currentDate())||null);},forget:id=>versions.set(id,(versions.get(id)||0)+1)};
 }
