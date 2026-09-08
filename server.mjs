@@ -7,17 +7,13 @@ import {validateChartContext} from './chart-context.mjs';
 import {readBasis,BasisReadError,calculateBasis,cashBasisReference} from './basis.mjs';
 import {validDate} from './public/session.mjs';
 import { readFile, writeFile } from 'node:fs/promises';
-import { timingSafeEqual } from 'node:crypto';
+import {createDeskAuth} from './auth.mjs';
 import { fileURLToPath } from 'node:url';
 import { createProviderChecks } from './providers.mjs';
 import { createAnalyzer } from './analysis.mjs';
 
-function matches(a, b) {
-  const left = Buffer.from(a), right = Buffer.from(b);
-  return left.length === right.length && timingSafeEqual(left, right);
-}
-
 export function createServer(password = process.env.DESK_PASSWORD) {
+  const auth=password?createDeskAuth(password):null;
   const openingHistory=createOpeningHistory();
   const baseCheck = createProviderChecks(), marketContext = createMarketContext({openingHistory}), odContext=createOptionsDepthContext(), esData=createDatabento();
   const checkProvider=async(provider,date,selection)=>{
@@ -46,11 +42,13 @@ export function createServer(password = process.env.DESK_PASSWORD) {
       res.writeHead(503, { 'Content-Type': 'text/plain' });
       return res.end('GreeksDesk is installed. Set the DESK_PASSWORD secret in Fly.io to open the private preview.');
     }
-    const header = req.headers.authorization || '';
-    const supplied = header.startsWith('Basic ') ? Buffer.from(header.slice(6), 'base64').toString('utf8') : '';
-    if (!matches(supplied, `drkleal:${password}`)) {
-      res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="GreeksDesk", charset="UTF-8"' });
-      return res.end('Sign in with username drkleal and your desk password.');
+    if(req.url==='/login'){
+      try{await auth.login(req,res);}catch{if(!res.headersSent)res.writeHead(400);res.end('Unable to sign in. Please reload the sign-in page.');}return;
+    }
+    if (!auth.authorized(req)) {
+      if(req.method==='GET'&&['/','/index.html','/preview','/connections','/connector'].includes(req.url)){res.writeHead(303,{Location:'/login'});return res.end();}
+      res.writeHead(401,{'Content-Type':'application/json'});
+      return res.end(JSON.stringify({ok:false,message:'Your session expired. Sign in to GreeksDesk again.'}));
     }
     if (req.url === '/api/config') {
       res.writeHead(200, {'Content-Type':'application/json'});

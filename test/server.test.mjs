@@ -15,7 +15,8 @@ test('private preview is locked, health stays available, and authenticated page 
   const base = `http://127.0.0.1:${server.address().port}`;
   try {
     assert.equal((await fetch(base + '/healthz')).status, 200);
-    assert.equal((await fetch(base)).status, 401);
+    const locked=await fetch(base,{redirect:'manual'});assert.equal(locked.status,303);assert.equal(locked.headers.get('location'),'/login');assert.equal(locked.headers.get('www-authenticate'),null);
+    const login=await fetch(base);assert.equal(login.status,200);assert.match(await login.text(),/Sign in to your scenario desk/);
     const headers = { Authorization: 'Basic ' + Buffer.from('drkleal:test-secret').toString('base64') };
     const page = await fetch(base, { headers });
     assert.equal(page.status, 200);
