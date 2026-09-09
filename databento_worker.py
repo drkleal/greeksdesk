@@ -109,6 +109,57 @@ def read_prior_context(client, db, contract, session_start, available, spent=0):
     return context
 
 
+def read_live(db, symbol, now):
+    """One bounded subscription; only a uniquely mapped ES contract can price the desk."""
+    live = db.Live(reconnect_policy='none')
+    mappings, received, messages = {}, [], []
+    def receive(record):
+        if isinstance(record, db.SymbolMappingMsg):
+            name = record.stype_out_symbol
+            if record.stype_in_symbol == symbol and re.fullmatch(r'ES[HMUZ][0-9]{1,2}', name):
+                mappings.setdefault(int(record.instrument_id), set()).add(name)
+        elif isinstance(record, db.ErrorMsg):
+            messages.append(safe_error(ValueError(str(record))))
+        elif isinstance(record, db.OHLCVMsg):
+            row = bar(record, 1)
+            if len(received) < 180:
+                received.append(row)
+            age = (datetime.now(UTC) - parse_time(row['end'])).total_seconds()
+            if 0 <= age < 5:
+                live.stop()
+    try:
+        live.subscribe(dataset=DATASET, schema='ohlcv-1s', symbols=[symbol],
+                       stype_in='continuous' if symbol == 'ES.v.0' else 'raw_symbol',
+                       start=now - timedelta(seconds=60))
+        live.add_callback(receive)
+        live.start()
+        try:
+            live.block_for_close(timeout=12)
+        except TimeoutError:
+            live.stop()
+        identities = {(row['instrumentId'], name) for row in received
+                      for name in mappings.get(row['instrumentId'], set())}
+        if len(identities) == 1 and not messages:
+            instrument_id, contract = identities.pop()
+            if symbol != 'ES.v.0' and contract != symbol:
+                raise ValueError('Unexpected live contract')
+            rows = [r for r in received if r['instrumentId'] == instrument_id]
+            row = max(rows, key=lambda r: r['end'])
+            return {'contract': contract, 'quote': dict(price=row['close'], timestamp=row['end'],
+                    intervalStart=row['timestamp'], instrumentId=instrument_id,
+                    kind='Completed 1-second trade bar'), 'messages': []}
+        if not messages:
+            messages.append('No uniquely mapped ES trade bar was received from the live connection.')
+    except Exception as exc:
+        messages.append(safe_error(exc))
+    finally:
+        try:
+            live.terminate()
+        except Exception:
+            pass
+    return {'quote': None, 'messages': messages}
+
+
 def read(request):
     import databento as db
     date = datetime.strptime(request['date'], '%Y-%m-%d').date()
@@ -121,7 +172,22 @@ def read(request):
     if start >= now:
         return {'ok': False, 'message': 'The selected ES session has not begun.'}
     historical = db.Historical()
-    raw_symbol = resolve_contract(historical, symbol, date)
+    try:
+        raw_symbol = resolve_contract(historical, symbol, date)
+    except Exception as exc:
+        historical_message = safe_error(exc)
+        if not (start <= now < end and market_window(now)):
+            return {'ok': False, 'message': historical_message}
+        # Historical symbology availability must not prevent a live subscription.
+        current = read_live(db, symbol, now)
+        if not current.get('quote'):
+            return {'ok': False, 'message': ' '.join(current['messages'] + ['Historical contract lookup: ' + historical_message])}
+        return {'ok': True, 'contract': current['contract'], 'requestedSymbol': symbol,
+                'dataset': DATASET, 'sessionDate': str(date), 'checkedAt': stamp(now),
+                'bars': [], 'quote': current['quote'],
+                'messages': ['Live price only; session history is unavailable. ' + historical_message],
+                'priorContext': {'available': False, 'message': historical_message}}
+
     if not re.fullmatch(r'ES[HMUZ][0-9]{1,2}', raw_symbol):
         raise ValueError('Unexpected ES mapping')
 
@@ -165,40 +231,10 @@ def read(request):
         spent = result.get('estimatedHistoryCostUSD', 0) + result.get('priorContext', {}).get('estimatedCostUSD', 0)
         result['volumeProfile'] = read_profile(historical, raw_symbol, start, end, available, parse_time(request['cash_close']), spent)
 
-    # Live capture is short-lived and invoked only by an explicit update cycle.
-    # It replays one minute, then accepts a fresh completed one-second trade bar.
     if start <= now < end and market_window(now):
-        live = db.Live(reconnect_policy='none')
-        received = []
-        def receive(record):
-            if isinstance(record, db.OHLCVMsg):
-                row = bar(record, 1)
-                received.append(row)
-                if (datetime.now(UTC) - parse_time(row['end'])).total_seconds() < 5:
-                    live.stop()
-        try:
-            live.subscribe(dataset=DATASET, schema='ohlcv-1s', symbols=[raw_symbol],
-                           stype_in='raw_symbol', start=now - timedelta(seconds=60))
-            live.add_callback(receive)
-            live.start()
-            try:
-                live.block_for_close(timeout=12)
-            except TimeoutError:
-                live.stop()
-            if received:
-                row = max(received, key=lambda r: r['end'])
-                result['quote'] = dict(price=row['close'], timestamp=row['end'],
-                                      intervalStart=row['timestamp'], instrumentId=row['instrumentId'],
-                                      kind='Completed 1-second trade bar')
-            else:
-                result['messages'].append('No fresh ES trade bar was received from the live connection.')
-        except Exception as exc:
-            result['messages'].append(safe_error(exc))
-        finally:
-            try:
-                live.terminate()
-            except Exception:
-                pass
+        live_result = read_live(db, raw_symbol, now)
+        result['quote'] = live_result.get('quote')
+        result['messages'].extend(live_result['messages'])
     if not result['bars'] and not result['quote']:
         return {'ok': False, 'message': ' '.join(result['messages']) or 'No ES data returned for this session.'}
     return result

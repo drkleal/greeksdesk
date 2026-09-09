@@ -1,9 +1,55 @@
 import unittest
+from unittest.mock import patch
 from types import SimpleNamespace
 from datetime import date, datetime, timezone
-from databento_worker import bar, market_window, safe_error, resolve_contract, read_prior_context
+from databento_worker import bar, market_window, safe_error, resolve_contract, read_prior_context, read_live, read
 
 class WorkerTests(unittest.TestCase):
+    def test_live_only_read_survives_historical_mapping_rejection(self):
+        import databento_worker as worker
+        moment = datetime(2026, 9, 9, 14, 0, tzinfo=timezone.utc)
+        class Clock(datetime):
+            @classmethod
+            def now(cls, tz=None): return moment
+        class Mapping:
+            stype_in_symbol='ES.v.0'
+            stype_out_symbol='ESU6'
+            instrument_id=12
+        class OHLCV:
+            open=high=low=close=7715500000000
+            volume=3
+            instrument_id=12
+            ts_event=int(moment.timestamp()*1e9)-2000000000
+        class Error: pass
+        calls=[]
+        class Live:
+            def __init__(self, **kw): pass
+            def subscribe(self, **kw): calls.append(kw)
+            def add_callback(self, cb): self.cb=cb
+            def start(self):
+                self.cb(Mapping())
+                self.cb(OHLCV())
+            def block_for_close(self, **kw): pass
+            def stop(self): pass
+            def terminate(self): calls.append('closed')
+        def denied(**kw): raise ValueError('historical unavailable')
+        db=SimpleNamespace(Live=Live,SymbolMappingMsg=Mapping,OHLCVMsg=OHLCV,ErrorMsg=Error,
+            Historical=lambda:SimpleNamespace(symbology=SimpleNamespace(resolve=denied)))
+        with patch.dict('sys.modules', {'databento':db}), patch.object(worker,'datetime',Clock):
+            result=read({'date':'2026-09-09','symbol':'ES.v.0'})
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['contract'],'ESU6')
+        self.assertEqual(result['quote']['price'],7715.5)
+        self.assertEqual(result['bars'],[])
+        self.assertEqual(calls[0]['stype_in'],'continuous')
+        self.assertEqual(calls[-1],'closed')
+        # A trade record without a matching symbol must not establish an ES quote.
+        Mapping.stype_in_symbol='NQ.v.0'
+        with patch.object(worker,'datetime',Clock):
+            result=read_live(db,'ES.v.0',moment)
+        self.assertIsNone(result['quote'])
+        self.assertIn('uniquely mapped',result['messages'][0])
+
     def test_historical_availability_error_is_not_mislabeled_live_licensing(self):
         error = ValueError('private-key')
         error.json_body = {'detail': {'case': 'dataset_unavailable_range', 'message': 'private-key Try again with an end time before 2026-09-08T17:09:48.097847000Z.'}}
