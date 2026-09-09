@@ -232,7 +232,7 @@ export function referenceRead(packet){
  }
  return {panels:[],headline:'Source references ready · original chart needed for scenarios',summary:`These are observations for ${packet.date}, not confirmed trading triggers. Signed premium totals do not establish direction. ${packet.instrument==='ES'&&packet.basis===null?'No matched basis: SPX references are context only.':packet.instrument==='ES'?'Prices use the user-supplied ES minus SPX basis of '+packet.basis+'.':''}`,gaps:['Attach or share the matching-session price/chart evidence to develop conditional scenarios.','Gamma model values alone do not establish support or resistance.'],changes:[],levels:levels.slice(0,6),sources:descriptions,scenarios:['up','down','neutral'].map(direction=>({direction,status:'insufficient',triggerId:null,targetId:null,condition:'The available API summaries do not establish this scenario.',confirmation:'Add a matching-session chart showing price structure and response.',invalidation:'No trading trigger has been established.'}))};
 }
-export function createAnalyzer({env=process.env,request=fetch,onValidationFailure=async()=>{}}={}){
+export function createAnalyzer({env=process.env,request=fetch,onValidationFailure=async()=>{},issueRecovery=()=>null}={}){
  let pending=false,last=null;
  return async input=>{
   const packet=validatePacket(input);
@@ -307,7 +307,8 @@ Return compact JSON with concise prose. For more than 24 sources: retain every s
      ['Invalid level panel.','A generated level cited an unavailable chart panel.'],
      ['Chart level needs a matching usable panel.','A generated chart level lacked a matching usable panel.']
     ]);
-    const result={ok:false,code:known.has(error?.message)?'evidence_mismatch':'analysis_validation',durationSeconds:elapsed,usage,message:(known.get(error?.message)||'The analysis failed the source and scenario checks.')+suffix};
+    const recovery=issueRecovery({packet,analysis:validationSnapshot,checkedAt:new Date().toISOString(),model:env.OPENAI_MODEL||'gpt-5.4',usage});
+    const result={ok:false,...(recovery?{recovery}:{}),code:known.has(error?.message)?'evidence_mismatch':'analysis_validation',durationSeconds:elapsed,usage,message:(known.get(error?.message)||'The analysis failed the source and scenario checks.')+suffix};
     last={hash,time:Date.now(),result};return result;
    }
    return {ok:false,code:stage==='decode'?'analysis_format':'analysis_connection',durationSeconds:elapsed,message:(stage==='decode'?'The analysis response was incomplete or unreadable.':'The analysis connection failed before a complete response arrived.')+suffix};

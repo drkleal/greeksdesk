@@ -1,4 +1,5 @@
 import http from 'node:http';
+import {createAnalysisRecovery} from './analysis-recovery.mjs';
 import {createMarketContext} from './market-context.mjs';
 import {createOpeningHistory} from './opening-history.mjs';
 import {createOptionsDepthContext} from './optionsdepth-context.mjs';
@@ -14,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { createProviderChecks } from './providers.mjs';
 import { createAnalyzer } from './analysis.mjs';
 
-export function createServer(password = process.env.DESK_PASSWORD) {
+export function createServer(password = process.env.DESK_PASSWORD, {analysisOptions={}}={}) {
   const auth=password?createDeskAuth(password):null;
   const openingHistory=createOpeningHistory();
   const baseCheck = createProviderChecks(), marketContext = createMarketContext({openingHistory}), odContext=createOptionsDepthContext(), esData=createDatabento(), massiveData=createMassive();
@@ -31,7 +32,8 @@ export function createServer(password = process.env.DESK_PASSWORD) {
     }
     return baseCheck(provider,date,selection);
   };
-  const analyze = createAnalyzer({onValidationFailure:review=>writeFile('/tmp/greeksdesk-analysis-review.json',JSON.stringify(review),{mode:0o600})});
+  const recovery=createAnalysisRecovery({secret:password});
+  const analyze = createAnalyzer({...analysisOptions,issueRecovery:recovery.issue,onValidationFailure:review=>writeFile('/tmp/greeksdesk-analysis-review.json',JSON.stringify(review),{mode:0o600})});
   return http.createServer(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -62,12 +64,13 @@ export function createServer(password = process.env.DESK_PASSWORD) {
       if(req.method!=='POST'||req.headers['x-greeksdesk-action']!=='manual-check'||req.headers['sec-fetch-site']==='cross-site'){res.writeHead(403);return res.end();}
       try{let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>3100000){res.writeHead(413);return res.end();}}const input=JSON.parse(raw);if(!validDate(input.date))throw new BasisReadError('Select a valid session date before reading the ES screenshot.');const context=validateChartContext(input.confirmedContext,input.date);const spx=await checkProvider('quantdata',input.date);const result=await readBasis(input.image,spx.ok?spx:{priceObservations:[]},input.date,{context});res.writeHead(200,{'Content-Type':'application/json'});return res.end(JSON.stringify(result));}catch(error){res.writeHead(400,{'Content-Type':'application/json'});return res.end(JSON.stringify({ok:false,message:error instanceof BasisReadError||error.message?.startsWith('No matching')?error.message:'Unable to establish a verified basis from this image. Include ES price, date and chart timezone.'}));}
     }
-    if (req.url === '/api/analyze') {
+    if (req.url === '/api/analyze'||req.url === '/api/recover-analysis') {
       if(req.method!=='POST'||req.headers['x-greeksdesk-action']!=='manual-check'||req.headers['sec-fetch-site']==='cross-site') {res.writeHead(403);return res.end('Same-origin action required');}
       try {
         const chunks=[];let size=0;
         for await (const chunk of req){size+=chunk.length;if(size>26000000){res.writeHead(413);res.end('Chart packet too large');return;}chunks.push(chunk);}
-        const result=await analyze(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+        const input=JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        const result=req.url==='/api/recover-analysis'?recovery.recover(input):await analyze(input);
         res.writeHead(200,{'Content-Type':'application/json'});return res.end(JSON.stringify(result));
       }catch{res.writeHead(400,{'Content-Type':'application/json'});return res.end(JSON.stringify({ok:false,message:'Check the source dates, chart sizes and instrument settings.'}));}
     }
