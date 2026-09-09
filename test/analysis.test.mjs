@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createAnalyzer,validatePacket,validateAnalysis} from '../analysis.mjs';
+import {createAnalyzer,validatePacket,validateAnalysis,analysisSchema} from '../analysis.mjs';
 test('corrected exposure calculations cannot become false before-and-after market movement',()=>{
  const input={date:'2026-09-04',instrument:'ES',basis:null,sources:[{id:'qd-gamma',title:'Gamma',sessionDate:'2026-09-04',data:{normalizationVersion:2}}],previousEvidence:{date:'2026-09-04',checkedAt:'2026-09-06T10:00:00Z',sources:[{id:'qd-gamma',data:{strongest:[{strike:6180,net:0}]}}]}};
  assert.equal(validatePacket(input).previousEvidence.sources[0].data.available,false);
@@ -34,7 +34,7 @@ test('rejected output is recoverable privately, never applied, and exact immedia
  const analyze=createAnalyzer({env:{OPENAI_API_KEY:'private-key'},onValidationFailure:async review=>{saved=review;},request:async()=>{calls++;return {ok:true,json:async()=>({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify(rejected)}]}],usage:{input_tokens:20,output_tokens:30,unused:'omit'}})};}});
  const result=await analyze(packet);
  assert.equal(result.ok,false);assert.equal(result.analysis,undefined);assert.equal(result.validationError,undefined);
- assert.deepEqual(saved.analysis,rejected);assert.match(saved.packetHash,/^[a-f0-9]{64}$/);assert.equal(saved.validationError,'Invalid scenario.');
+ assert.deepEqual(saved.analysis,rejected);assert.deepEqual(saved.packet,validatePacket(packet));assert.match(saved.packetHash,/^[a-f0-9]{64}$/);assert.equal(saved.validationError,'Invalid scenario.');
  assert.deepEqual(saved.usage,{inputTokens:20,outputTokens:30});assert.equal(saved.sources,undefined);assert.ok(!JSON.stringify(saved).includes('private-key'));
  const repeat=await analyze(packet);assert.equal(repeat.cached,true);assert.equal(repeat.ok,false);assert.equal(calls,1);
 });
@@ -116,8 +116,10 @@ test('off-map checkpoints require the same price, source and identity evidence a
  assert.equal(check().checkpoints[0].price,7719.25);
  assert.throws(()=>check({price:7800}),/native ES/);
  assert.throws(()=>check({sourceIds:['missing']}),/level evidence/);
- assert.throws(()=>check({role:'model_reference'}),/checkpoint/);
- assert.throws(()=>check({identity:{...checkpoint.identity,category:'drawing'}}),/checkpoint/);
+ assert.equal(check({role:'model_reference'}).checkpoints.length,0);
+ assert.equal(check({role:'model_reference'}).referenceCheckpoints[0].role,'model_reference');
+ assert.equal(check({identity:{...checkpoint.identity,category:'drawing'}}).referenceCheckpoints[0].role,'model_reference');
+ assert.throws(()=>check({identity:undefined}),/checkpoint/);
  assert.throws(()=>validateAnalysis({...structuredClone(valid),levels:[checkpoint],checkpoints:[checkpoint]},input),/level evidence/);
  assert.throws(()=>validateAnalysis({...structuredClone(valid),checkpoints:[checkpoint],scenarios:valid.scenarios.map(s=>({...s,triggerId:'retest'}))},input),/scenario/);
  // Image-backed checkpoints must use an observed, usable panel too.
@@ -231,4 +233,38 @@ test('current chart establishes a level while previous-day panel stays separate 
  assert.throws(()=>run(l,{...prior,status:'excluded'}),/Invalid level panel/);
  assert.throws(()=>run({...l,panelIds:['p1','invented']}),/Invalid level panel/);
  assert.throws(()=>run({...l,sourceIds:['gamma']}),/Invalid level panel/);
+});
+
+
+test('checkpoint output schema cannot request a model reference as structural evidence',()=>{
+ const schema=analysisSchema.properties.checkpoints.items;
+ assert.deepEqual(schema.properties.role.enum,['structure']);
+ assert.deepEqual(schema.properties.identity.properties.category.enum,['structure','provider']);
+ assert.ok(analysisSchema.properties.levels.items.properties.role.enum.includes('model_reference'));
+});
+
+test('September 9 HVN reference conflict preserves findings while withholding dependent paths without a second AI call',async()=>{
+ // Regression fixture for the actual rejected checkpoint, with deliberately small test source data.
+ // This verifies validation behavior, not a reconstruction of the user's full market packet.
+ const date='2026-09-09',timestamp='2026-09-09T11:20:00Z';
+ const input={date,instrument:'ES',basis:null,sources:[{id:'databento',title:'ESU6 regression fixture',sessionDate:date,data:{available:true,ticker:'ES',dataset:'GLBX.MDP3',contract:'ESU6',recentBars:[{open:7647.25,high:7665,low:7647.25,close:7657.5}],volumeProfile:{available:true,contract:'ESU6',schema:'trades',completeWindow:true,through:timestamp,nodes:[{kind:'HVN',price:7659.75}]}}}]};
+ const level=(id,price)=>({id,price,label:id,role:'structure',kind:'support',identity:{category:'structure',name:id,sourceLabel:null,description:'Observed reaction',derivation:'Test reaction fixture'},apiOrigin:null,sourceIds:['databento'],panelIds:[],evidence:'Test price structure',watch:'Retest',invalidation:'Failure'});
+ const reference={...level('C7659_75',7659.75),role:'model_reference',kind:'reference',identity:{category:'provider',name:'Profile HVN 7659.75',sourceLabel:'Databento volumeProfile HVN',description:'Local high-volume node between the low bounce and the broken shelf.',derivation:'Databento volume profile marked 7659.75 as an HVN through 7:20 AM ET.'},apiOrigin:{sourceId:'databento',sessionDate:date,timeframe:'volume_profile',timestamp,field:'hvn'}};
+ const raw={...structuredClone(valid),headline:'Generated plan',summary:'Generated path claims',panels:[],levels:[level('low',7647.25),level('trigger',7657.5),level('upper',7665)],checkpoints:[reference],sources:[{id:'databento',shows:'Retained finding',importance:'Observed prices',lookFor:'Retest'}],scenarios:valid.scenarios.map(s=>({...s,status:'conditional',triggerId:s.direction==='up'?'trigger':'low',targetId:s.direction==='down'?null:'upper',condition:s.direction==='up'?'Reclaim the trigger.':'Observe the boundaries.',confirmation:s.direction==='up'?'Travel through checkpoint 7,659.75.':'Observe a price response.',continuation:{targetId:null,condition:'Reassess',confirmation:'Reassess',invalidation:'Failure',rationale:'No broader target'}}))};
+ const response=value=>({ok:true,json:async()=>({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify(value)}]}],usage:{input_tokens:10,output_tokens:20}})});
+ let calls=0;const analyze=createAnalyzer({env:{OPENAI_API_KEY:'test-only'},request:async()=>{calls++;return response(raw);}});
+ const result=await analyze(input),a=result.analysis;
+ assert.equal(result.ok,true);assert.equal(calls,1);assert.equal(a.reviewStatus,'limited');
+ assert.equal(a.levels.length,3);assert.equal(a.sources[0].shows,'Retained finding');assert.deepEqual(a.checkpoints,[]);
+ assert.equal(a.referenceCheckpoints[0].role,'model_reference');assert.equal(a.referenceCheckpoints[0].price,7659.75);
+ for(const direction of ['up','neutral']){const s=a.scenarios.find(s=>s.direction===direction);assert.equal(s.status,'insufficient');assert.equal(s.triggerId,null);assert.equal(s.targetId,null);assert.equal(s.continuation.targetId,null);assert.match(s.condition,/reference/);}
+ assert.equal(a.scenarios.find(s=>s.direction==='down').status,'conditional');
+ assert.match(a.summary,/withheld/);assert.ok(!a.summary.includes('Generated path claims'));
+ assert.equal((await analyze(input)).cached,true);assert.equal(calls,1);
+ for(const patch of [{price:7659.5},{sourceIds:['invented']},{apiOrigin:{...reference.apiOrigin,timestamp:'2026-09-09T11:21:00Z'}}]){
+  const bad=structuredClone(raw);Object.assign(bad.checkpoints[0],patch);assert.throws(()=>validateAnalysis(bad,input));
+ }
+ const orphan=structuredClone(raw);orphan.scenarios[0].targetId='invented';assert.throws(()=>validateAnalysis(orphan,input),/scenario/);
+ const outside=structuredClone(raw);outside.scenarios[0].targetId='low';outside.scenarios[0].status='insufficient';outside.scenarios[2].status='insufficient';
+ assert.equal(validateAnalysis(outside,input).scenarios[1].status,'conditional');
 });
