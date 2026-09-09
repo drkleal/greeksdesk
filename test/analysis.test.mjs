@@ -63,6 +63,21 @@ test('data-only reference read has exact extrema and no AI request or trading tr
 });
 
 const panel={id:'p1',sourceId:'gamma',title:'Price',instrument:'SPX',instrumentEvidence:'price_axis',instrumentLabel:'SPX',metricUnits:'price points',observedDate:'2026-09-04',dateEvidence:'visible',dateRole:'observed_session',status:'usable',reason:'Readable',shows:'Price structure',region:{x:0,y:0,width:1,height:1}};
+test('pixel-sized model regions do not reject a full-image review or bypass evidence checks',()=>{
+ for(const [width,height] of [[1680,1157],[1845,1277],[1848,1277],[1534,1277]]){
+  const p={...panel,region:{x:0,y:0,width,height}};
+  const output=validateAnalysis({...structuredClone(valid),panels:[p]},packet);
+  assert.deepEqual(output.panels[0].region,{x:0,y:0,width:1,height:1});
+  assert.equal(output.panels[0].locationVerified,false);
+  assert.throws(()=>validateAnalysis({...structuredClone(valid),panels:[{...p,observedDate:'2026-09-03'}]},packet),/date mismatch/);
+  assert.throws(()=>validateAnalysis({...structuredClone(valid),panels:[{...p,dateEvidence:'unknown'}]},packet),/visible or confirmed date/);
+ }
+ const captured={id:'panel-1',title:'Measured region',complete:true,region:{x:.1,y:.2,width:.4,height:.5}};
+ const input=validatePacket({...packet,sources:[{...packet.sources[0],capturedPanels:[captured]}]});
+ const p={...panel,capturedPanelId:'panel-1',region:{x:0,y:0,width:1680,height:1157}};
+ assert.deepEqual(validateAnalysis({...structuredClone(valid),panels:[p]},input).panels[0].region,captured.region);
+ assert.throws(()=>validateAnalysis({...structuredClone(valid),panels:[{...p,capturedPanelId:'panel-99'}]},input),/does not match/);
+});
 test('neutral IDs can link an explicit exact range but cannot invent or choose ambiguous boundaries',()=>{
  const build=(range,upperRole='structure')=>({...structuredClone(valid),panels:[panel],levels:[7710,7725].map((price,i)=>({id:'range-'+i,price,role:i?upperRole:'structure',kind:i?'resistance':'support',label:'Observed range edge',sourceIds:['gamma'],panelIds:['p1'],evidence:'Repeated price response',watch:'Retest',invalidation:'Acceptance outside'})),scenarios:valid.scenarios.map(s=>({...s,...(s.direction==='neutral'?{status:'conditional',condition:'Price holds a range.',invalidation:'Acceptance outside '+range+' ends the range.'}:{})}))});
  const fixed=validateAnalysis(build('7,710.00–7,725.00'),packet).scenarios[2];assert.equal(fixed.status,'conditional');assert.equal(fixed.triggerId,'range-0');assert.equal(fixed.targetId,'range-1');assert.ok(fixed.boundaryResolution);
@@ -71,7 +86,7 @@ test('neutral IDs can link an explicit exact range but cannot invent or choose a
 test('panel evidence excludes mismatched dates and cross-instrument prices',()=>{
  assert.throws(()=>validateAnalysis({...valid,panels:[{...panel,observedDate:'2026-09-08'}]},packet));
  assert.throws(()=>validateAnalysis({...valid,panels:[{...panel,instrument:'SPY'}]},packet));
- assert.throws(()=>validateAnalysis({...valid,panels:[{...panel,region:{x:.9,y:0,width:.5,height:1}}]},packet));
+ assert.deepEqual(validateAnalysis({...valid,panels:[{...panel,region:{x:.9,y:0,width:.5,height:1}}]},packet).panels[0].region,{x:0,y:0,width:1,height:1});
  assert.equal(validateAnalysis({...valid,panels:[panel]},packet).panels.length,1);
 });
 test('ES API references apply only the explicitly supplied basis',()=>{
