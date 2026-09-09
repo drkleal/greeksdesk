@@ -17,7 +17,13 @@ primary_region = 'iad'
   force_https = true
   auto_stop_machines = 'stop'
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1
+
+  # A single long analysis is active work, even at low request volume.
+  [http_service.concurrency]
+    type = 'requests'
+    soft_limit = 1
+    hard_limit = 20
 
   [[http_service.checks]]
     interval = '30s'
