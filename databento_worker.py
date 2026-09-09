@@ -40,6 +40,11 @@ def market_window(now):
 
 def safe_error(exc):
     # Never relay SDK exception text: authentication errors can contain key material.
+    detail = (getattr(exc, 'json_body', None) or {}).get('detail', {})
+    if isinstance(detail, dict) and detail.get('case') == 'dataset_unavailable_range':
+        boundary = re.search(r'end time before (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)', str(detail.get('message', '')))
+        permitted = ' before ' + boundary.group(1) if boundary else ' within an earlier historical window'
+        return 'Databento access permits data' + permitted + '. This request extends beyond that availability window. Check this API key\u2019s CME subscription and licensing access; current ES prices have not been verified.'
     if 'licens' in str(exc).lower() or 'entitle' in str(exc).lower():
         return 'Databento live-data licensing or entitlement was rejected. Check the CME GLBX.MDP3 live license in the Databento portal; a configured key does not establish live access.'
     code = getattr(exc, 'http_status', None) or getattr(exc, 'status', None) or getattr(exc, 'status_code', None)

@@ -4,6 +4,15 @@ from datetime import date, datetime, timezone
 from databento_worker import bar, market_window, safe_error, resolve_contract, read_prior_context
 
 class WorkerTests(unittest.TestCase):
+    def test_historical_availability_error_is_not_mislabeled_live_licensing(self):
+        error = ValueError('private-key')
+        error.json_body = {'detail': {'case': 'dataset_unavailable_range', 'message': 'private-key Try again with an end time before 2026-09-08T17:09:48.097847000Z.'}}
+        result = safe_error(error)
+        self.assertIn('2026-09-08T17:09:48.097847000Z', result)
+        self.assertIn('availability window', result)
+        self.assertNotIn('private-key', result)
+        self.assertNotIn('live-data licensing', result)
+
     def test_price_scale_and_bar_time(self):
         record = SimpleNamespace(open=7715000000000, high=7716000000000, low=7714000000000,
             close=7715500000000, volume=4, instrument_id=12,
