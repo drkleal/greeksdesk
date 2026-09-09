@@ -1,8 +1,9 @@
 import {node} from './map.mjs';
 import {resizeChart,saveChartDraft,loadChartDrafts} from './capture.mjs';
+import {createChartRestore} from './chart-restore.mjs';
 export const chartSlots=[{id:'paste-dg',title:'DeepGamma · DG',hint:'Gamma levels and regime'},{id:'es-snapshot',title:'DeepCharts · DC',hint:'ES price structure and session levels'},{id:'paste-vp',title:'VP · Sessions & daily',hint:'Session / daily VAH, VAL, POC, HVN, LVN and VWAP',scope:'session_daily'},{id:'paste-vp-prior',title:'VP · Previous day',hint:'Previous daily profile; keep its date visible',scope:'previous_daily'},{id:'paste-vp-composite',title:'VP · Multi-day context',hint:'Several-day profile for background analysis; no composite VAH/VAL on the chart',scope:'multi_day_context'}];
 export function mountChartIntake(host,{accept,remove,analyze,currentDate,locked,changed}){
- const previews=new Map(),versions=new Map(),restoreDate=currentDate();
+ const previews=new Map(),versions=new Map();
  host.append(node('h2','Paste your trading charts'),node('p','Click a box and press Ctrl+V. Replace a chart by pasting again. Then choose Update & analyze to combine these charts with the API data.'));
  const grid=node('div',undefined,'chart-paste-grid');host.append(grid);
  for(const slot of chartSlots){
@@ -22,6 +23,8 @@ export function mountChartIntake(host,{accept,remove,analyze,currentDate,locked,
  const run=node('button','Update & analyze all evidence','primary');run.onclick=()=>{if(!locked())analyze();};
  const progress=node('p','Ready. Update & analyze combines these charts with the available API data.','analysis-progress');progress.setAttribute('role','status');progress.setAttribute('aria-live','polite');
  host.append(run,progress,node('p','Include the instrument, session date, and chart time where possible. A pasted image stays fixed until you replace it; Auto updates do not refresh screenshots.','muted'));
- loadChartDrafts(restoreDate).then(async drafts=>{for(const s of drafts)if(!versions.has(s.id)&&currentDate()===restoreDate&&!locked()&&await accept(s))previews.get(s.id)?.(s);}).catch(()=>{});
- return {setProgress:text=>{progress.textContent=text;},setBusy:value=>{run.disabled=value;run.textContent=value?'Working… please wait':'Update & analyze all evidence';progress.classList.toggle('is-busy',value);},syncAll:sources=>{for(const [id,sync]of previews)sync(sources.find(s=>s.id===id&&s.sessionDate===currentDate())||null);},forget:id=>versions.set(id,(versions.get(id)||0)+1)};
+ const restoration=createChartRestore({load:loadChartDrafts,accept,currentDate,locked,versions,onRestored:s=>previews.get(s.id)?.(s)});
+ function restore(){return restoration.restore().catch(()=>{progress.textContent='Saved charts could not be restored in this browser. Paste the charts again before analysis.';});}
+ restore();
+ return {restore,whenReady:()=>restoration.whenReady().catch(()=>{}),setProgress:text=>{progress.textContent=text;},setBusy:value=>{run.disabled=value;run.textContent=value?'Working… please wait':'Update & analyze all evidence';progress.classList.toggle('is-busy',value);},syncAll:sources=>{for(const [id,sync]of previews)sync(sources.find(s=>s.id===id&&s.sessionDate===currentDate())||null);},forget:id=>versions.set(id,(versions.get(id)||0)+1)};
 }
