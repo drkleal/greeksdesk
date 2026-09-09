@@ -1,3 +1,6 @@
+export function selectESSource(sources){
+ return sources.filter(s=>['databento','massive-es'].includes(s.id)&&s.data?.available!==false&&s.data?.ticker==='ES'&&Number.isFinite(s.data.latestPrice)&&s.data.latestPrice>0&&/^ES[HMUZ]\d{1,2}$/.test(s.data.contract)&&Number.isFinite(Date.parse(s.data.latestTimestamp))).sort((a,b)=>Date.parse(b.data.latestTimestamp)-Date.parse(a.data.latestTimestamp))[0];
+}
 export const priceText=p=>Number(p).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
 export function quoteStatus(feed, now=Date.now()){
  if(feed.freshness==='historical')return 'Historical';

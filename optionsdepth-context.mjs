@@ -73,8 +73,8 @@ export function createOptionsDepthContext({env=process.env,request=fetch}={}){
    if(fallbackSlot)for(const source of sources)if(source.data.endpoint!=='heatmap/'){
     source.data.snapshotFallback={requestedSlot:selection.slot,usedSlot:fallbackSlot,reason:'The selected after-close time returned no dealer rows. Using the last cash-session minute as dated model context, not a live update.'};
    }
-   // No documented IV Depth API exists in the provider's API catalogue.
-   sources.push({id:'od-iv-depth',title:'OptionsDepth · IV Depth',sessionDate:date,capturedAt:checkedAt,url:'https://app.optionsdepth.com/iv-depth',data:{ticker:'SPX',family:'volatility',available:false,captureRequired:true,message:'IV Depth has no endpoint in the documented API catalogue. Its original visible panel must be captured for analysis.'}});
+   // This integration does not fetch the IV Depth panel. Do not imply a separate provider.
+   sources.push({id:'od-iv-depth',title:'OptionsDepth · IV Depth (chart capture)',sessionDate:date,capturedAt:checkedAt,url:'https://app.optionsdepth.com/',data:{ticker:'SPX',family:'volatility',available:false,captureRequired:true,message:'The current integration does not fetch this OptionsDepth panel. Capture its original chart to include it. Quant Data volatility metrics are collected separately.'}});
    const result={ok:true,count:sources.length,sources,requestCount:calls,checkedAt,cacheSeconds:600};cache.set(cacheKey,{time:Date.now(),result});if(cache.size>8)cache.delete(cache.keys().next().value);return result;
   })();pending.set(cacheKey,job);try{return await job;}finally{pending.delete(cacheKey);}
  };

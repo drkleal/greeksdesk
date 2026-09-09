@@ -8,7 +8,7 @@ import {createUpdateLoop} from './update-loop.mjs';
 import {startChartShare,resizeChart,listReads,saveRead,saveChartDraft,saveESDraft,chartImageBlob} from './capture.mjs';
 import {node,renderMap,sourceLink} from './map.mjs';
 import {renderEvidence,showEvidenceTab,focusEvidence} from './evidence.mjs';
-import {levelDetails,priceText,directionTitle,scenarioRoute,quoteStatus} from './plan.mjs';
+import {levelDetails,priceText,directionTitle,scenarioRoute,quoteStatus,selectESSource} from './plan.mjs';
 import {appendPriceEvidence} from './price-evidence.mjs';
 import {today,initialSession,validDate,esSessionDate} from './session.mjs';
 const $=id=>document.getElementById(id);
@@ -62,14 +62,19 @@ async function updateData(){
  const date=$('session').value;cycles++;usage();
  // Start a fresh source set: an unsuccessful provider is never silently reused.
  sources=[];lastUpdateWarnings=[];showSources();markOld();message('Updating market data…');
- const esProvider=massiveConfigured&&date===currentSession('ES')?'massive-es':'databento',esConfigured=esProvider==='massive-es'||databentoConfigured;
- const results=await Promise.allSettled([provider('quantdata',date),provider('optionsdepth',date),provider('quantdata-context',date),...(esConfigured?[provider(esProvider,date,{symbol:$('es-contract').value.trim()||'ES.v.0'})]:[])]);let failure=[];
+ const esProviders=[...(databentoConfigured?['databento']:[]),...(massiveConfigured&&date===currentSession('ES')?['massive-es']:[])];
+ const results=await Promise.allSettled([provider('quantdata',date),provider('optionsdepth',date),provider('quantdata-context',date),...esProviders.map(id=>provider(id,date,{symbol:$('es-contract').value.trim()||'ES.v.0'}))]);let failure=[];
  if(results[2].status==='fulfilled'){sources.push(...results[2].value.sources);for(const item of results[2].value.sources){if(item.data.available===false)failure.push(item.title+': '+item.data.message);if(item.data.intervals?.available===false)failure.push(item.title+' intervals: '+item.data.intervals.message);}}
  const drift=results[0].status==='fulfilled'?results[0].value:null,slots=results[1].status==='fulfilled'?results[1].value:null;
  for(const [i,id,title]of [[0,'quantdata','Quant Data · SPX Net Drift'],[1,'timestamps','OptionsDepth · Intraday model availability'],[2,'quantdata-context','Quant Data · Exposure, flow, OI and volatility panels']])if(results[i].status==='rejected')sources.push({id,title,sessionDate:date,capturedAt:new Date().toISOString(),data:{available:false,message:results[i].reason.message}});
  for(const r of results)if(r.status==='rejected')failure.push(r.reason.message);
- const es=results[3]?.status==='fulfilled'?results[3].value:null;
- if(esConfigured){if(es){sources.push({id:esProvider,title:(es.provider||'Databento')+' · '+es.contract+' ES price data',sessionDate:date,capturedAt:es.checkedAt,data:{...es,priceObservations:undefined}});$('es-feed-status').textContent=es.contract+' · '+es.freshness+' · '+es.latestPrice+' at '+marketTime(es.latestTimestamp);$('basis').value=es.basisResult?.ok?es.basisResult.basis:'';$('basis-result').textContent=basisCaption(es);}else{$('es-feed-status').textContent='ES feed unavailable on this update. Prior scenario is not fresh.';sources.push({id:esProvider,title:(esProvider==='massive-es'?'Polygon/Massive':'Databento')+' · ES price data',sessionDate:date,capturedAt:new Date().toISOString(),data:{ticker:'ES',available:false,message:results[3]?.reason?.message||'No ES response'}});$('basis').value='';}}
+ for(const [index,id]of esProviders.entries()){
+  const response=results[index+3],data=response.status==='fulfilled'?response.value:null;
+  sources.push({id,title:(id==='massive-es'?'Polygon/Massive':'Databento')+' · ES price data',sessionDate:date,capturedAt:data?.checkedAt||new Date().toISOString(),data:data?{...data,priceObservations:undefined}:{ticker:'ES',available:false,message:response.reason?.message||'No ES response'}});
+ }
+ const es=selectESSource(sources)?.data;
+ if(es){$('es-feed-status').textContent=(es.provider||'Databento')+' · '+es.contract+' · '+es.freshness+' · '+es.latestPrice+' at '+marketTime(es.latestTimestamp);$('basis').value=es.basisResult?.ok?es.basisResult.basis:'';$('basis-result').textContent=basisCaption(es);}
+ else if(esProviders.length){$('es-feed-status').textContent='ES feed unavailable on this update. Prior scenario is not fresh.';$('basis').value='';}
  if(drift){sources.push({id:'quantdata',title:'Quant Data · SPX Net Drift',sessionDate:date,capturedAt:drift.checkedAt,url:links.quantdata,data:{...drift,priceObservations:undefined}});$('data-session').textContent=date;$('data-freshness').textContent=date===currentSession()?'Compare the source time with the current time.':'Historical session · not current market data';}
  showPrice();
  if(slots)sources.push({id:'timestamps',title:'OptionsDepth · Available model times',sessionDate:date,capturedAt:slots.checkedAt,url:links.gamma,data:{count:slots.count,earliest:slots.slots[0],latest:slots.slots.at(-1),note:'Availability only; not an exposure reading.'}});
@@ -183,7 +188,7 @@ $('export').addEventListener('click',()=>{if(!read)return;const url=URL.createOb
 window.addEventListener('pagehide',()=>{loop.stop();share?.stop();});
 refreshHistory(true);
 
-appConfig=fetch('/api/config',{signal:AbortSignal.timeout(30000)}).then(r=>r.json()).then(c=>{databentoConfigured=!!c.databentoConfigured;massiveConfigured=!!c.massiveConfigured;$('es-feed-status').textContent=massiveConfigured?'Polygon/Massive connected for current ES prices; select Update data to check.':databentoConfigured?'Databento configured · Update data checks ES prices.':'Databento not configured. ES screenshots remain available.';$('configuration').textContent=c.analysisConfigured?'Analysis connected. Selected data and images are sent to OpenAI only when analysis is requested.':'Add OPENAI_API_KEY in Fly secrets to enable analysis. Data updates and local charts still work.';}).catch(()=>{$('configuration').textContent='Unable to check analysis connection.';});
+appConfig=fetch('/api/config',{signal:AbortSignal.timeout(30000)}).then(r=>r.json()).then(c=>{databentoConfigured=!!c.databentoConfigured;massiveConfigured=!!c.massiveConfigured;$('es-feed-status').textContent=massiveConfigured?'ES price connections configured. Update data checks the available feeds and preserves Databento history.':databentoConfigured?'Databento configured · Update data checks ES prices.':'Databento not configured. ES screenshots remain available.';$('configuration').textContent=c.analysisConfigured?'Analysis connected. Selected data and images are sent to OpenAI only when analysis is requested.':'Add OPENAI_API_KEY in Fly secrets to enable analysis. Data updates and local charts still work.';}).catch(()=>{$('configuration').textContent='Unable to check analysis connection.';});
 
 async function connectCharts(silent=false){try{const result=await connectorRequest('status');if(!result?.ok)throw Error(result?.message||'Connector unavailable.');connectorEnabled=result.count>0;$('connector-status').textContent=connectorEnabled?result.count+' chart tabs connected. Update & analyze will capture them.':'Connector installed. Select chart tabs in its toolbar popup.';$('connect-charts').textContent=connectorEnabled?'Reconnect charts':'Connect charts';if(!silent)message($('connector-status').textContent);}catch(error){connectorEnabled=false;$('connector-status').textContent='One-time browser connector setup needed.';if(!silent)message(error.message+' Open the connector setup guide below.');}}
 $('connect-charts').addEventListener('click',()=>connectCharts());
@@ -198,7 +203,7 @@ function chartContext(){return $('confirm-es').checked?{instrument:'ES',sessionD
 function contextLabel(){$('confirm-es-label').textContent='This is my ES price chart for '+$('session').value;}
 function showPrice(selected=charts,selectedSources=sources,instrument=$('instrument').value){
  displayedESFeed=null;
- const es=selected.find(c=>c.id==='es-snapshot')?.observation,spx=selectedSources.find(s=>s.id==='quantdata')?.data,feed=selectedSources.find(s=>s.id==='massive-es'&&s.data?.available)?.data||selectedSources.find(s=>s.id==='databento')?.data;
+ const es=selected.find(c=>c.id==='es-snapshot')?.observation,spx=selectedSources.find(s=>s.id==='quantdata')?.data,feed=selectESSource(selectedSources)?.data;
  if(instrument==='ES'&&Number.isFinite(feed?.latestPrice)&&feed.available!==false){displayedESFeed=feed;$('price-label').textContent=(feed.provider||'Databento')+' · '+feed.contract;$('price').textContent=priceText(feed.latestPrice);showESAge();return;}
  $('price-label').textContent=instrument==='ES'?'Chart price · ES':'API reference · SPX';
  if(instrument==='ES'){$('price').textContent=Number.isFinite(es?.price)&&es.instrument==='ES'?es.price.toLocaleString(undefined,{minimumFractionDigits:2}):'—';$('price-time').textContent=es?.instrument==='ES'?'Snapshot · '+(marketTime(es.timestamp)):'Read your pasted ES chart';}
@@ -224,7 +229,7 @@ $('paste-es').addEventListener('click',()=>{compactES(false);$('paste-es').focus
 
 $('retry-basis').addEventListener('click',async()=>{if(busy)return;const chart=charts.find(c=>c.id==='es-snapshot');if(!chart){$('basis-result').textContent='Paste your ES screenshot in the box above first.';return;}try{await inspectES(chartImageBlob(chart.image),true);}catch(error){$('basis-result').textContent=error.message;}});
 
-$('es-contract').addEventListener('change',()=>{loop.stop();sources=sources.filter(s=>s.id!=='databento');$('basis').value='';markOld();showPrice();});
+$('es-contract').addEventListener('change',()=>{loop.stop();sources=sources.filter(s=>!['databento','massive-es'].includes(s.id));$('basis').value='';markOld();showPrice();});
 
 intake=mountChartIntake($('chart-intake'),{
  currentDate:()=>$('session').value,locked:()=>busy,
