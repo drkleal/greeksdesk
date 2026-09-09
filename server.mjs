@@ -3,6 +3,7 @@ import {createMarketContext} from './market-context.mjs';
 import {createOpeningHistory} from './opening-history.mjs';
 import {createOptionsDepthContext} from './optionsdepth-context.mjs';
 import {createMassive} from './massive.mjs';
+import {createPriorCashBasis} from './prior-basis.mjs';
 import {createDatabento} from './databento.mjs';
 import {validateChartContext} from './chart-context.mjs';
 import {readBasis,BasisReadError,calculateBasis,cashBasisReference} from './basis.mjs';
@@ -17,6 +18,7 @@ export function createServer(password = process.env.DESK_PASSWORD) {
   const auth=password?createDeskAuth(password):null;
   const openingHistory=createOpeningHistory();
   const baseCheck = createProviderChecks(), marketContext = createMarketContext({openingHistory}), odContext=createOptionsDepthContext(), esData=createDatabento(), massiveData=createMassive();
+  const priorBasis=createPriorCashBasis({readES:esData,readSPX:date=>baseCheck('quantdata',date)});
   const checkProvider=async(provider,date,selection)=>{
     if(provider==='quantdata-context')return marketContext(date);
     if(provider==='straddle-history')return openingHistory.batch(date,selection?.offset||0);
@@ -24,7 +26,7 @@ export function createServer(password = process.env.DESK_PASSWORD) {
     if(provider==='massive-es')return massiveData(date,selection?.symbol||undefined);
     if(provider==='databento'){
       const result=await esData(date,selection?.symbol||undefined);
-      if(result.ok){const spx=await baseCheck('quantdata',date);result.basisReference=cashBasisReference(result,spx,date);try{if(result.freshness==='stale')throw new BasisReadError('ES price is not fresh. No current basis applied.');result.basisResult=calculateBasis({instrument:'ES',price:result.latestPrice,timestamp:result.latestTimestamp,contract:result.contract},spx,date);}catch(error){result.basisResult={ok:false,message:error instanceof BasisReadError?error.message:'No matching SPX price.'};}}
+      if(result.ok){const spx=await baseCheck('quantdata',date);result.basisReference=cashBasisReference(result,spx,date)||await priorBasis(result,date);try{if(result.freshness==='stale')throw new BasisReadError('ES price is not fresh. No current basis applied.');result.basisResult=calculateBasis({instrument:'ES',price:result.latestPrice,timestamp:result.latestTimestamp,contract:result.contract},spx,date);}catch(error){result.basisResult={ok:false,message:error instanceof BasisReadError?error.message:'No matching SPX price.'};}}
       return result;
     }
     return baseCheck(provider,date,selection);
@@ -87,7 +89,7 @@ export function createServer(password = process.env.DESK_PASSWORD) {
     }
     const scripts = {'/evidence-policy.mjs':'./public/evidence-policy.mjs','/plan.mjs':'./public/plan.mjs','/evidence.mjs':'./public/evidence.mjs','/session.mjs':'./public/session.mjs','/connector.mjs':'./public/connector.mjs','/desk.mjs':'./public/desk.mjs','/desk.css':'./public/desk.css','/map.mjs':'./public/map.mjs','/capture.mjs':'./public/capture.mjs','/exposure.js':'./public/exposure.js','/connections.mjs':'./public/connections.mjs','/update-loop.mjs':'./public/update-loop.mjs'};
     scripts['/price-evidence.mjs']='./public/price-evidence.mjs';
-    for(const asset of ['workbench.mjs','confluence.mjs','workbench.css','chart-intake.mjs','chart-restore.mjs','analysis-readiness.mjs','level-board.mjs','straddle.mjs','straddle-panel.mjs','verification.mjs','level-brief.mjs','exposure-display.mjs','source-status.mjs'])scripts['/'+asset]='./public/'+asset;
+    for(const asset of ['basis-display.mjs','workbench.mjs','confluence.mjs','workbench.css','chart-intake.mjs','chart-restore.mjs','analysis-readiness.mjs','level-board.mjs','straddle.mjs','straddle-panel.mjs','verification.mjs','level-brief.mjs','exposure-display.mjs','source-status.mjs'])scripts['/'+asset]='./public/'+asset;
     if (!['/', '/index.html', '/preview', '/connections', '/connector', '/chart-connector.zip', ...Object.keys(scripts)].includes(req.url)) {
       res.writeHead(404);
       return res.end('Not found');

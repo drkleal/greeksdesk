@@ -219,3 +219,16 @@ test('trade-derived VWAP and profile nodes require exact named session and origi
  assert.equal(check({...level,price:7717.25,apiOrigin:{...level.apiOrigin,timeframe:'volume_profile',field:'poc'}}).levels[0].price,7717.25);
  assert.throws(()=>check({...level,price:7717.25,apiOrigin:{...level.apiOrigin,timeframe:'volume_profile',field:'hvn'}}));
 });
+
+
+test('current chart establishes a level while previous-day panel stays separate context',()=>{
+ const input={...packet,instrument:'ES',basis:null,sources:[packet.sources[0],{...packet.sources[0],id:'prior',title:'Previous day'}]};
+ const current={...panel,instrument:'ES'},prior={...panel,id:'prior-panel',sourceId:'prior',instrument:'ES',status:'context',observedDate:'2026-09-03'};
+ const l={id:'pivot',price:7659.75,label:'Breakdown pivot',role:'structure',kind:'resistance',sourceIds:['gamma','prior'],panelIds:['p1','prior-panel'],evidence:'Current chart failure with earlier profile context',watch:'Reclaim',invalidation:'Hold above'};
+ const run=(level=l,context=prior)=>validateAnalysis({...structuredClone(valid),panels:[current,context],levels:[structuredClone(level)]},input);
+ const result=run().levels[0];assert.deepEqual(result.panelIds,['p1']);assert.deepEqual(result.sourceIds,['gamma']);assert.deepEqual(result.contextPanelIds,['prior-panel']);assert.deepEqual(result.contextSourceIds,['prior']);
+ assert.throws(()=>run({...l,sourceIds:['prior'],panelIds:['prior-panel']}));
+ assert.throws(()=>run(l,{...prior,status:'excluded'}),/Invalid level panel/);
+ assert.throws(()=>run({...l,panelIds:['p1','invented']}),/Invalid level panel/);
+ assert.throws(()=>run({...l,sourceIds:['gamma']}),/Invalid level panel/);
+});

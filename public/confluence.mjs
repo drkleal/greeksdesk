@@ -1,5 +1,6 @@
 import {evidenceConstraint} from './evidence-policy.mjs';
 import {evidenceCoverage} from './evidence.mjs';
+import {cashSession,nyTime} from './session.mjs';
 
 export const families=[
  ['price','ES price structure','#2ce2ff'],['gamma','Gamma','#40ffc1'],
@@ -27,8 +28,9 @@ export function conversionFor(read){
  if(read.instrument==='SPX')return {kind:'native',basis:0,label:'Native SPX coordinates'};
  if(Number.isFinite(read.basis))return {kind:'applied',basis:read.basis,label:'Read basis · ES − SPX '+signed(read.basis)+' pts'};
  const d=read.sources.find(s=>s.id==='databento')?.data,r=d?.basisReference;
- if(r?.ok&&r.kind==='cash_anchor'&&r.sessionDate===read.date&&r.contract===d.contract&&Number.isFinite(r.basis)&&Math.abs(r.basis)<=200&&Math.abs(Date.parse(r.esTime)-Date.parse(r.spxTime))<=60000)
-  return {kind:'anchor',basis:r.basis,reference:r,label:'Frozen cash anchor · ≈ ES − SPX '+signed(r.basis)+' pts'};
+ const previous=r?.method==='prior_cash_close'&&r.comparisonSessionDate===read.date&&r.sessionDate<read.date&&Date.parse(read.date)-Date.parse(r.sessionDate)<=10*86400000&&[r.esTime,r.spxTime].every(t=>{const p=nyTime(t),hours=cashSession(r.sessionDate);return p?.date===r.sessionDate&&hours&&p.seconds>=hours.close-300&&p.seconds<=hours.close;});
+ if(r?.ok&&r.kind==='cash_anchor'&&(r.sessionDate===read.date||previous)&&r.contract===d.contract&&Number.isFinite(r.basis)&&Math.abs(r.basis)<=200&&Math.abs(Date.parse(r.esTime)-Date.parse(r.spxTime))<=60000)
+  return {kind:'anchor',basis:r.basis,reference:r,label:(previous?'Prior close '+r.sessionDate+' · estimated conversion':'Frozen cash anchor')+' · ≈ ES − SPX '+signed(r.basis)+' pts'};
  return {kind:'unmapped',basis:null,label:'Native ES plan · SPX exposure shown separately'};
 }
 export const signed=n=>(n>=0?'+':'')+n.toLocaleString('en-US',{maximumFractionDigits:2});
