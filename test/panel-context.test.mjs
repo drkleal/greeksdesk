@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {ivRank,volatilityGrid,oiRows,series} from '../quant-panels.mjs';
 import {optionsDepthRequests,positionalRows,depthRows,createOptionsDepthContext} from '../optionsdepth-context.mjs';
 import {validatePacket} from '../analysis.mjs';
+import {sourceStatus} from '../public/source-status.mjs';
 const date='2026-09-04',selection={slot:date+'T17:00:00',min:7570,max:7870};
 
 test('live IV percent fields and 25-delta skew are not multiplied by 100',()=>{
@@ -45,4 +46,28 @@ test('OD failures are cached without leaking the credential or retrying',async()
 test('expanded evidence packet retains all supplied panel sources',()=>{
  const sources=Array.from({length:50},(_,i)=>({id:'source-'+i,title:'Source '+i,sessionDate:date,data:{available:true}}));
  assert.equal(validatePacket({date,instrument:'ES',basis:null,sources}).sources.length,50);
+});
+
+test('empty after-close OD positions use one verified earlier snapshot, preserving heatmap time and provenance',async()=>{
+ const calls=[];
+ const collect=createOptionsDepthContext({env:{OPTIONSDEPTH_API_KEY:'private-key'},request:async url=>{
+  const u=new URL(url),slot=u.searchParams.get('date_time').replace(' ','T');calls.push({path:u.pathname,slot});
+  let rows=[];
+  if(slot===date+'T15:59:00')rows=[{effective_datetime:slot,strike_price:7720,expiration_date:date,latest_value:23,net_value:23}];
+  return {ok:true,json:async()=>rows};
+ }});
+ const result=await collect(date,selection),gex=result.sources[0],heatmap=result.sources.find(s=>s.id==='gamma');
+ assert.equal(result.requestCount,21);assert.equal(gex.data.available,true);assert.equal(gex.data.actualSlot,date+'T15:59:00');
+ assert.equal(gex.data.requestedSlot,selection.slot);assert.equal(gex.data.requestScope.date_time,date+' 15:59:00');
+ assert.equal(gex.data.snapshotFallback.usedSlot,date+'T15:59:00');
+ assert.equal(heatmap.data.requestScope.date_time,date+' 17:00:00');assert.equal(heatmap.data.snapshotFallback,undefined);
+ assert.equal(calls.filter(c=>c.slot===selection.slot).length,4);
+ assert.equal(sourceStatus(gex,date).label,'Earlier model snapshot');
+ assert.equal((await collect(date,selection)).requestCount,0);
+});
+
+test('OD fallback does not turn empty cash-session data into an earlier-date reading',async()=>{
+ let calls=0;const collect=createOptionsDepthContext({env:{OPTIONSDEPTH_API_KEY:'key'},request:async()=>{calls++;return {ok:true,json:async()=>[]};}});
+ const result=await collect(date,{...selection,slot:date+'T12:00:00'});
+ assert.equal(calls,20);assert.ok(result.sources.every(s=>!s.data.snapshotFallback));
 });

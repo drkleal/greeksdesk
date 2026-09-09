@@ -1,5 +1,6 @@
 import {mapLimit} from './quant-panels.mjs';
 import {normalizeGamma} from './providers.mjs';
+import {cashSession} from './public/session.mjs';
 const finite=Number.isFinite;
 const metrics=[['GEX','Gamma','gamma'],['DEX','DEX','delta'],['VEX','Vanna','vanna'],['CEX','Charm','charm'],['NET_POSITION','Net position','positioning']];
 const time=t=>typeof t==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(t)&&finite(Date.parse(t));
@@ -47,7 +48,7 @@ export function createOptionsDepthContext({env=process.env,request=fetch}={}){
   if(pending.has(cacheKey))return pending.get(cacheKey);
   const job=(async()=>{
    let calls=0;
-   const sources=await mapLimit(tasks,3,async t=>{
+   const collectTask=async t=>{
     let data;
     if(!env.OPTIONSDEPTH_API_KEY)data={available:false,message:'OptionsDepth key is not configured.'};
     else try{
@@ -56,8 +57,22 @@ export function createOptionsDepthContext({env=process.env,request=fetch}={}){
      data=r.ok?{available:true,...t.normalize(await r.json())}:{available:false,message:'OptionsDepth returned HTTP '+r.status+'. No retry made.'};
     }catch{data={available:false,message:'OptionsDepth timed out or returned an unrecognized response. No retry made.'};}
     const {key,...requestScope}=t.query;
-    return {id:t.id,title:t.title,sessionDate:date,capturedAt:checkedAt,url:'https://app.optionsdepth.com/'+(t.path==='heatmap/'?'market-makers':t.path==='depthview/'?'depth-view':'positional-insight'),data:{ticker:'SPX',family:t.family,endpoint:t.path,requestScope,scope:`SPX · ${t.query.customer_type||'heatmap'} · ${t.query.expiration_type==='range'?t.query.expiration_range_start+' through '+t.query.expiration_range_end:t.query.expiration_type||'provider model'} · ${selection.min}–${selection.max}`,requestedSlot:selection.slot,sessionDate:date,checkedAt,...data}};
-   });
+    return {id:t.id,title:t.title,sessionDate:date,capturedAt:checkedAt,url:'https://app.optionsdepth.com/'+(t.path==='heatmap/'?'market-makers':t.path==='depthview/'?'depth-view':'positional-insight'),data:{ticker:'SPX',family:t.family,endpoint:t.path,requestScope,scope:`SPX · ${t.query.customer_type||'heatmap'} · ${t.query.expiration_type==='range'?t.query.expiration_range_start+' through '+t.query.expiration_range_end:t.query.expiration_type||'provider model'} · ${selection.min}–${selection.max}`,requestedSlot:selection.slot,collectionSlot:t.query.date_time.replace(' ','T'),sessionDate:date,checkedAt,...data}};
+   };
+   // Heatmap times extend beyond the populated positional snapshots. Probe once,
+   // and only fall back for an empty successful response after the cash close.
+   let first=await collectTask(tasks[0]),selectedTasks=tasks,fallbackSlot=null;
+   const hours=cashSession(date),clock=selection.slot.slice(11).split(':').map(Number),seconds=clock[0]*3600+clock[1]*60+clock[2];
+   if(hours&&seconds>=hours.close&&first.data.available===false&&first.data.actualSlot===null&&Array.isArray(first.data.rows)){
+    const minute=hours.close-60;
+    const slot=date+'T'+String(Math.floor(minute/3600)).padStart(2,'0')+':'+String(Math.floor(minute/60)%60).padStart(2,'0')+':00';
+    const priorTasks=optionsDepthRequests(date,{...selection,slot}),prior=await collectTask(priorTasks[0]);
+    if(prior.data.available){first=prior;fallbackSlot=slot;selectedTasks=tasks.map((t,i)=>t.path==='heatmap/'?t:priorTasks[i]);}
+   }
+   const sources=[first,...await mapLimit(selectedTasks.slice(1),3,collectTask)];
+   if(fallbackSlot)for(const source of sources)if(source.data.endpoint!=='heatmap/'){
+    source.data.snapshotFallback={requestedSlot:selection.slot,usedSlot:fallbackSlot,reason:'The selected after-close time returned no dealer rows. Using the last cash-session minute as dated model context, not a live update.'};
+   }
    // No documented IV Depth API exists in the provider's API catalogue.
    sources.push({id:'od-iv-depth',title:'OptionsDepth · IV Depth',sessionDate:date,capturedAt:checkedAt,url:'https://app.optionsdepth.com/iv-depth',data:{ticker:'SPX',family:'volatility',available:false,captureRequired:true,message:'IV Depth has no endpoint in the documented API catalogue. Its original visible panel must be captured for analysis.'}});
    const result={ok:true,count:sources.length,sources,requestCount:calls,checkedAt,cacheSeconds:600};cache.set(cacheKey,{time:Date.now(),result});if(cache.size>8)cache.delete(cache.keys().next().value);return result;
