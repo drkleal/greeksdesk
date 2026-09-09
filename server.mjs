@@ -2,6 +2,7 @@ import http from 'node:http';
 import {createMarketContext} from './market-context.mjs';
 import {createOpeningHistory} from './opening-history.mjs';
 import {createOptionsDepthContext} from './optionsdepth-context.mjs';
+import {createMassive} from './massive.mjs';
 import {createDatabento} from './databento.mjs';
 import {validateChartContext} from './chart-context.mjs';
 import {readBasis,BasisReadError,calculateBasis,cashBasisReference} from './basis.mjs';
@@ -15,11 +16,12 @@ import { createAnalyzer } from './analysis.mjs';
 export function createServer(password = process.env.DESK_PASSWORD) {
   const auth=password?createDeskAuth(password):null;
   const openingHistory=createOpeningHistory();
-  const baseCheck = createProviderChecks(), marketContext = createMarketContext({openingHistory}), odContext=createOptionsDepthContext(), esData=createDatabento();
+  const baseCheck = createProviderChecks(), marketContext = createMarketContext({openingHistory}), odContext=createOptionsDepthContext(), esData=createDatabento(), massiveData=createMassive();
   const checkProvider=async(provider,date,selection)=>{
     if(provider==='quantdata-context')return marketContext(date);
     if(provider==='straddle-history')return openingHistory.batch(date,selection?.offset||0);
     if(provider==='optionsdepth-context')return odContext(date,selection);
+    if(provider==='massive-es')return massiveData(date,selection?.symbol||undefined);
     if(provider==='databento'){
       const result=await esData(date,selection?.symbol||undefined);
       if(result.ok){const spx=await baseCheck('quantdata',date);result.basisReference=cashBasisReference(result,spx,date);try{if(result.freshness==='stale')throw new BasisReadError('ES price is not fresh. No current basis applied.');result.basisResult=calculateBasis({instrument:'ES',price:result.latestPrice,timestamp:result.latestTimestamp,contract:result.contract},spx,date);}catch(error){result.basisResult={ok:false,message:error instanceof BasisReadError?error.message:'No matching SPX price.'};}}
@@ -52,7 +54,7 @@ export function createServer(password = process.env.DESK_PASSWORD) {
     }
     if (req.url === '/api/config') {
       res.writeHead(200, {'Content-Type':'application/json'});
-      return res.end(JSON.stringify({analysisConfigured:!!process.env.OPENAI_API_KEY,databentoConfigured:!!process.env.DATABENTO_API_KEY}));
+      return res.end(JSON.stringify({analysisConfigured:!!process.env.OPENAI_API_KEY,databentoConfigured:!!process.env.DATABENTO_API_KEY,massiveConfigured:!!(process.env.POLYGON_API_KEY||process.env.MASSIVE_API_KEY)}));
     }
     if(req.url==='/api/basis'){
       if(req.method!=='POST'||req.headers['x-greeksdesk-action']!=='manual-check'||req.headers['sec-fetch-site']==='cross-site'){res.writeHead(403);return res.end();}

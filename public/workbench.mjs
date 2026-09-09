@@ -15,7 +15,7 @@ export function refreshWorkbenchAge(host){const badge=host?.querySelector('[data
 export function markWorkbenchOld(host){const notice=host?.querySelector('.wb-read-notice');if(notice)notice.hidden=false;}
 export function refreshWorkbenchMarketData(host,date,sources){host?.querySelector('.wb-confluence-board')?.dispatchEvent(new CustomEvent('straddle-update',{detail:{date,sources}}));}
 export function renderWorkbench(host,read,{panelButton,chartButton}={}){
- host.replaceChildren();const a=read.result.analysis,feed=read.sources.find(s=>s.id==='databento')?.data||{},conversion=conversionFor(read),inventory=familyInventory(read),columns=exposureColumns(read);
+ host.replaceChildren();const a=read.result.analysis,feed=read.sources.find(s=>s.id==='massive-es'&&s.data?.available)?.data||read.sources.find(s=>s.id==='databento')?.data||{},conversion=conversionFor(read),inventory=familyInventory(read),columns=exposureColumns(read);
  const dialog=el('dialog',undefined,'wb-inspector');
  const close=button('Close ×',()=>dialog.close(),'wb-close'),body=el('div',undefined,'wb-inspector-body');dialog.append(close,body);host.append(dialog);
  dialog.addEventListener('click',e=>{if(e.target===dialog)dialog.close();});

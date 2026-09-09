@@ -50,7 +50,7 @@ export function renderLevelBoard(host,read,{inspectLevel,inspectSource,inspectSc
  const groups=[{label:'GAMMA',ids:['qd-gamma','qd-gamma-0dte','od-gex-mm-strike'],x:120,w:220},{label:'DEX',ids:['qd-delta','od-dex-mm-strike'],x:360,w:160},{label:'VANNA',ids:['qd-vanna','od-vex-mm-strike'],x:540,w:160},{label:'OPEN INTEREST',ids:['qd-oi-strike','qd-oi-strike-0dte'],x:720,w:150}];
  function draw(){
   hideTip();plot.replaceChildren();const columns=exposureColumns(read,{expirationDate:expiry.value}),canMap=conversion.kind!=='unmapped',basis=conversion.basis||0;
-  const last=read.instrument==='ES'?feed?.latestPrice:read.sources.find(s=>s.id==='quantdata')?.data?.latestPrice;
+  const last=read.instrument==='ES'?(read.sources.find(s=>s.id==='massive-es'&&s.data?.available)?.data?.latestPrice??feed?.latestPrice):read.sources.find(s=>s.id==='quantdata')?.data?.latestPrice;
   const spot=Number.isFinite(last)?last:(a.levels[0]?.price||0),span=visibleSpan,min=Math.floor((spot-span)/5)*5,max=Math.ceil((spot+span)/5)*5;
   const levels=a.levels.filter(l=>l.role==='structure'&&l.price>=min&&l.price<=max).sort((a,b)=>b.price-a.price);
   if(!spot){plot.append(node('p','Verified price levels will appear here after the first analysis.','muted'));return;}
