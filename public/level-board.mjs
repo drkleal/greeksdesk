@@ -62,7 +62,7 @@ export function renderLevelBoard(host,read,{inspectLevel,inspectSource,inspectSc
   const levels=a.levels.filter(l=>l.role==='structure'&&l.price>=min&&l.price<=max).sort((a,b)=>b.price-a.price);
   if(!spot){plot.append(node('p','Verified price levels will appear here after the first analysis.','muted'));return;}
   const allLevels=a.levels.filter(l=>l.role==='structure').sort((a,b)=>b.price-a.price);
-  const briefs=new Map(allLevels.map(l=>{const b=levelBrief(read,l,{expirationDate:expiry.value}),lines=wrapBrief(b.condition,66);return [l.id,{...b,lines,height:84+lines.length*20+(b.confluence.text?24:0)+wrapBrief(b.modelText,74).length*18}];}));
+  const briefs=new Map(allLevels.map(l=>{const b=levelBrief(read,l,{expirationDate:expiry.value}),lines=wrapBrief(b.condition,66);return [l.id,{...b,lines,height:180+lines.length*20+(b.confluence.text?24:0)+wrapBrief(b.modelText,74).length*18}];}));
   // Increase price scale density to keep the full condition on its own level.
   // Text is never displaced to another price or silently shortened.
   const density=Math.min(24,Math.max(6,...allLevels.slice(0,-1).map((l,i)=>(briefs.get(l.id).height+8)/Math.max(1,l.price-allLevels[i+1].price))));
@@ -137,19 +137,26 @@ export function renderLevelBoard(host,read,{inspectLevel,inspectSource,inspectSc
   const depth=read.sources.find(s=>s.id==='od-depth-gex');if(canMap&&depth?.data.available)for(const d of (depth.data.byStrike||[]).filter(r=>r.strike+basis>=min&&r.strike+basis<=max).sort((a,b)=>Math.abs(b.net)-Math.abs(a.net)).slice(0,12)){const g=svg('g');g.append(svg('rect',{x:1302,y:y(d.strike+basis)-5,width:10,height:10,fill:'#a7c9ef'}));const cells=(depth.data.rows||[]).filter(r=>r.strike===d.strike);tip(g,'Depth View · '+priceText(d.strike+basis)+' '+read.instrument,['SPX '+d.strike+' · net '+signed(d.net)+' OD units',...cells.slice(0,4).map(r=>r.expirationDate+': '+signed(r.net))],()=>inspectSource(depth,{title:'Depth View · '+priceText(d.strike+basis)+' '+read.instrument,facts:['SPX '+d.strike+' · net '+signed(d.net)+' OD units',...cells.slice(0,6).map(r=>r.expirationDate+': '+signed(r.net))]}));root.append(g);}
   const priceLabels=svg('g',{'data-trade-price-labels':'true'});
   for(const l of levels){
+   const levelTag='L'+(allLevels.findIndex(item=>item.id===l.id)+1);
    const yy=y(l.price),g=svg('g',{'data-level-id':l.id}),d=levelDetails(l,a),items=levelConfluence(read,l),label=confluenceLabel(items),decision=l.role==='structure';
    const color=l.kind==='support'?'#40ffc1':l.kind==='resistance'?'#ff5e90':'#ffe16a';
    const priceLabel=svg('g');priceLabel.append(svg('rect',{x:-40,y:yy-14,width:148,height:28,rx:3,fill:'#061937'}),svg('text',{x:100,y:yy,'text-anchor':'end','dominant-baseline':'central',fill:color,'font-size':18,'font-weight':750},priceText(l.price)));
-   if(label.stars)priceLabel.append(svg('text',{x:-38,y:yy,'dominant-baseline':'central',fill:'#ffd34f','font-size':18,class:'wb-confluence-stars'},label.stars));
-   tip(priceLabel,d.name+' · '+priceText(l.price),[label.text||d.derivation],()=>inspectLevel(l));priceLabels.append(priceLabel);
+   priceLabel.append(svg('rect',{x:-43,y:yy-13,width:38,height:26,rx:4,fill:color}),svg('text',{x:-24,y:yy,'text-anchor':'middle','dominant-baseline':'central',fill:'#061937','font-size':15,'font-weight':800},levelTag));
+   if(label.stars)priceLabel.append(svg('text',{x:-24,y:yy+28,'text-anchor':'middle',fill:'#ffd34f','font-size':18,class:'wb-confluence-stars'},label.stars));
+   tip(priceLabel,levelTag+' / '+d.name+' · '+priceText(l.price),[label.text||d.derivation],()=>inspectLevel(l));priceLabels.append(priceLabel);
    g.append(svg('line',{x1:10,x2:1330,y1:yy,y2:yy,stroke:color,'stroke-width':decision?4:1.5,opacity:decision?1:.6}));
    const brief=briefs.get(l.id),next=levels[levels.indexOf(l)+1],height=next?Math.max(34,Math.min(brief.height,y(next.price)-yy-6)):brief.height;
    g.append(svg('line',{x1:1330,x2:1350,y1:yy,y2:yy,stroke:color,'stroke-width':2}));
    const frame=svg('foreignObject',{x:1350,y:yy-14,width:cardWidth,height,'data-level-card':l.id}),card=node('div',undefined,'wb-level-card'),header=node('header'),price=node('strong',priceText(l.price));
    card.style.setProperty('--level',color);if(label.stars)price.append(node('span',' '+label.stars,'wb-confluence-stars'));
-   header.append(price,node('span',d.name));card.append(header,node('p',brief.role,'wb-level-role'),node('p',brief.condition));
-   if(label.text)card.append(node('p',label.text,'wb-level-facts'));if(brief.modelText)card.append(node('p',brief.modelText,'wb-level-context'));frame.append(card);g.append(frame);
-   tip(g,d.name+' · '+priceText(l.price),[...(label.text?[label.text]:[]),d.derivation,...items.filter(i=>i.effect==='supports'&&!i.coordinateOnly).slice(0,3).map(i=>i.observation)],()=>inspectLevel(l));root.append(g);
+   header.append(node('span',levelTag,'wb-level-id'),price,node('span',d.name,'wb-level-name'));
+   const kind=l.kind==='support'?'Support':l.kind==='resistance'?'Resistance':'Pivot / watch';
+   const evidence=node('div',undefined,'wb-confluence-identifiers');
+   evidence.append(node('strong',label.count>=2?'Confluence · '+label.count+' supporting families':label.count===1?'1 supporting family':'No supporting families','wb-confluence-count'));
+   const badges=node('div',undefined,'wb-evidence-badges');for(const name of label.labels)badges.append(node('span',name));evidence.append(badges);
+   card.append(header,node('p',kind+' · '+brief.role,'wb-level-role'),evidence,node('p',brief.condition));
+   if(brief.modelText)card.append(node('p',brief.modelText,'wb-level-context'));frame.append(card);g.append(frame);
+   tip(g,levelTag+' / '+d.name+' · '+priceText(l.price),[...(label.text?[label.text]:[]),d.derivation,...items.filter(i=>i.effect==='supports'&&!i.coordinateOnly).slice(0,3).map(i=>i.observation)],()=>inspectLevel(l));root.append(g);
   }
   for(const s of a.scenarios||[]){
    const route=scenarioRoute(s,a.levels,a.checkpoints);if(!route.ready)continue;
@@ -169,6 +176,6 @@ export function renderLevelBoard(host,read,{inspectLevel,inspectSource,inspectSc
   viewGeometry={min,max,top,bottom,scale:root.getBoundingClientRect().width/(W+160)};centerPlot(Number.isFinite(focusPrice)?Math.max(min,Math.min(max,focusPrice)):spot);zoom.setAttribute('aria-valuetext','Plus or minus '+visibleSpan+' points');
  }
  range.onchange=()=>setZoom(Number(range.value));expiry.onchange=draw;draw();
- const legend=node('p',undefined,'wb-board-legend');legend.append(node('span','★ 3 supporting families     ★★ 4 or more','wb-confluence-stars'),node('span',' · Repeated views count once. Hover for the contribution; click for complete evidence.'));host.append(legend);
+ const legend=node('p',undefined,'wb-board-legend');legend.append(node('span','★ 3 supporting families     ★★ 4 or more','wb-confluence-stars'),node('span',' · L1, L2... match price lines to cards in this read. Repeated views count once. Click for complete evidence.'));host.append(legend);
  const detail=node('details',undefined,'wb-board-method');detail.append(node('summary','How the chart combines sources'),node('p','Stars count distinct supporting families, not trade probability. Conflicting, unavailable and coordinate-only evidence stays in the inspector. Each exposure column keeps its own scale and units. SPY dark-pool prints remain in the evidence inventory until a verified SPY-to-ES mapping is available.','muted'));host.append(detail);
 }

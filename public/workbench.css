@@ -43,3 +43,12 @@ main:has(#workbench){max-width:none!important;width:calc(100% - 32px)!important;
 @media(max-height:650px){.wb-zoom-rail{gap:5px;padding-block:6px}.wb-zoom-rail input[type=range]{height:100px}}
 
 .wb-chart-ruler{position:sticky;top:0;height:0;z-index:3}.wb-chart-ruler:before{content:"";position:absolute;inset:0 0 auto;height:36px;background:#102d50;border-bottom:1px solid #65a4c4}.wb-chart-ruler span{position:absolute;top:6px;color:#e5f6ff;font-weight:700;white-space:nowrap}
+
+/* Match every price line to an explicit level identity and evidence summary. */
+.wb-level-card header{position:sticky;top:-5px;z-index:1;background:#102f54;padding:6px 0;border-bottom:1px solid #577c9b;gap:6px 10px}
+.wb-level-card header .wb-level-id{background:var(--level);color:#061937;padding:1px 7px;border-radius:4px;font-size:15px;font-weight:800}
+.wb-level-card header .wb-level-name{flex-basis:100%;font-size:17px;color:#fff;line-height:1.35}
+.wb-confluence-identifiers{border:1px solid #688b9f;border-radius:5px;background:#071e34;padding:8px;margin:9px 0}
+.wb-confluence-identifiers .wb-confluence-count{display:block;white-space:normal;font-size:14px;color:#f9df8a;line-height:1.4}
+.wb-evidence-badges{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+.wb-evidence-badges span{border:1px solid #67adae;border-radius:4px;padding:3px 7px;color:#defffa;background:#153e48;font-size:14px;line-height:1.35;font-weight:650}
