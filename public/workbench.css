@@ -54,3 +54,5 @@ main:has(#workbench){max-width:none!important;width:calc(100% - 32px)!important;
 .wb-evidence-badges span{border:1px solid #67adae;border-radius:4px;padding:3px 7px;color:#defffa;background:#153e48;font-size:14px;line-height:1.35;font-weight:650}
 
 .gamma-freshness-strip{padding:14px 16px;border:1px solid #5fb3bd;border-left:4px solid #39d8cf;background:#0c2d42;color:#e5f9ff;font-size:15px;line-height:1.5;border-radius:5px}.gamma-freshness-strip[data-band="reference"]{border-color:#e4bc57}.gamma-freshness-strip[data-band="not_used"]{border-color:#bd7897}
+
+.wb-straddle-stats{font-size:15px;line-height:1.5}.wb-straddle-stats strong{font-size:16px;width:100%}.wb-straddle-stats small{font-size:12px}.wb-straddle-summary button,.wb-straddle-summary select{font-size:13px}.wb-straddle-record{width:100%;font-size:14px}.wb-straddle-record p{line-height:1.5}

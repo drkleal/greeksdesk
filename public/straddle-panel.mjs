@@ -1,5 +1,5 @@
 import {node} from './map.mjs';
-import {esPremiumRange,openingQuartile,vixDailyRange} from './straddle.mjs';
+import {esPremiumRange,openingQuartile,vixDailyRange,straddleBands,straddleSigmaLabel} from './straddle.mjs';
 const storageKey='greeksdesk-opening-straddles-v1';
 const price=v=>Number.isFinite(v)?v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
 const time=t=>t?new Date(t).toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+' ET':'Time unavailable';
@@ -14,11 +14,12 @@ export function mountStraddlePanel(host,read,onChange){
  let history=remember([...(data.history||[]),...(data.opening?.ready?[data.opening]:[])]),loading=false;
  const box=node('div',undefined,'wb-straddle-summary'),select=node('select'),stats=node('div',undefined,'wb-straddle-stats'),build=node('button','Build 60-session comparison'),progress=node('span',undefined,'wb-straddle-progress'),multiples=node('input'),toggle=node('label');
  select.setAttribute('aria-label','Straddle reference');for(const [value,text]of [['latest','Updated premium'],['opening','9:36 ET · fixed opening']]){const option=node('option',text);option.value=value;select.append(option);}
- select.value=data.state==='cash-session'&&data.latest?.ready?'latest':'opening';multiples.type='checkbox';toggle.append(multiples,document.createTextNode('Show 2× opening premium'));
+ select.value=read.result.straddleBands?.selected||(data.state==='cash-session'&&data.latest?.ready?'latest':'opening');multiples.type='checkbox';toggle.append(multiples,document.createTextNode('Show 2× opening premium'));
  box.append(select,stats,toggle,build,progress);host.append(box);
  function view(){
   const observation=data[select.value],mapping=read.instrument==='ES'?esPremiumRange(observation,feed):observation?.ready?{ready:true,anchor:observation.spot,lower:observation.spot-observation.premium,upper:observation.spot+observation.premium,basis:0}:{};
   const opening=read.instrument==='ES'?esPremiumRange(data.opening,feed):data.opening?.ready?{ready:true,anchor:data.opening.spot}:{};
+  const bands=!refreshed&&read.result.straddleBands?read.result.straddleBands[select.value]:straddleBands(observation,mapping);
   const q=openingQuartile(data.opening||{sessionDate:read.date},history);
   const label=select.value==='opening'?'9:36 fixed':data.state==='cash-session'?'Updated minute':data.state==='prior-session'?'Prior-session indicative':'Historical close';
   const facts=observation?.ready?[
@@ -27,15 +28,17 @@ export function mountStraddlePanel(host,read,onChange){
    'SPX '+price(observation.spot)+(mapping.ready&&read.instrument==='ES'?' · ES '+price(mapping.anchor)+' · matching basis '+price(mapping.basis):''),
    observation.ratio?'VIX '+price(observation.vix)+' · straddle/VIX daily ratio '+observation.ratio.toFixed(3)+'×. This compares volatility measures; it is not a fitted correlation coefficient.':'No timestamp-matched VIX observation; ratio withheld.',
    select.value==='opening'?(q.ready?'Opening ratio Q'+q.quartile+' against the preceding 60 sessions. Current session excluded.':'Opening history '+q.count+'/60 valid prior sessions. Quartile withheld until complete.'):'Opening ratio and quartile use a separate fixed 9:36 reference.',
-   observation.limitation,...(refreshed?['This measurement was refreshed after the plan. The playbook remains at its displayed analysis time.']:[])
+   observation.limitation,...(bands.ready?[bands.oneSigma.label+' · ±'+price(bands.oneSigma.points)+' pts · '+price(bands.oneSigma.lower)+' – '+price(bands.oneSigma.upper),bands.breakeven.label+' · ±'+price(bands.rawStraddle)+' pts · '+price(bands.breakeven.lower)+' – '+price(bands.breakeven.upper),bands.method]:[]),...(refreshed?['This measurement was refreshed after the plan. The playbook remains at its displayed analysis time.']:[])
   ]:[observation?.message||data.message||'Update data to read both ATM option legs and VIX.'];
-  return {source,observation,mapping,vixRange:vixDailyRange(observation,mapping),opening: data.opening,openingMapping:opening,label,facts,multiples:multiples.checked,quartile:q};
+  return {source,observation,mapping,bands,vixRange:vixDailyRange(observation,mapping),opening: data.opening,openingMapping:opening,label,facts,multiples:multiples.checked,quartile:q};
  }
  function render(){
-  const v=view();stats.replaceChildren(node('strong',v.observation?.ready?v.label+' · ±'+price(v.observation.premium)+' pts':v.label+' · unavailable'));
+  const v=view();stats.replaceChildren(node('strong',v.observation?.ready?v.label+' · raw straddle S = '+price(v.observation.premium)+' pts':v.label+' · unavailable'));
   if(v.observation?.ready){
-   stats.append(node('span',v.mapping.ready?price(v.mapping.lower)+' – '+price(v.mapping.upper)+' '+read.instrument:v.mapping.message||'No matching price anchor'));
+   stats.append(node('span',v.bands.ready?'Expected range · '+straddleSigmaLabel+' · estimate · ±'+price(v.bands.oneSigma.points)+' pts · '+price(v.bands.oneSigma.lower)+' – '+price(v.bands.oneSigma.upper)+' '+read.instrument:v.bands.message||'No matching price anchor'));
+   if(v.bands.ready)stats.append(node('span','Outer dotted breakeven band · ±S = ±'+price(v.bands.rawStraddle)+' pts · '+price(v.bands.breakeven.lower)+' – '+price(v.bands.breakeven.upper)));
    stats.append(node('span','VIX '+price(v.observation.vix)+' · ratio '+(Number.isFinite(v.observation.ratio)?v.observation.ratio.toFixed(3)+'×':'unavailable')));
+   if(v.bands.ready)stats.append(node('small','Bands use the matched price anchor. Exact option breakevens (strike ±S), mapped to '+read.instrument+': '+price(v.bands.exactOptionBreakevens.lower)+' – '+price(v.bands.exactOptionBreakevens.upper)+'. The 1σ estimate is not calibrated probability.'));
    if(v.vixRange.ready)stats.append(node('span','VIX daily benchmark ±'+price(v.vixRange.points)+' pts'));
   }else stats.append(node('span',v.facts[0]));
   stats.append(node('span',v.quartile.ready?'9:36 ratio · Q'+v.quartile.quartile+' / 60 prior sessions':'9:36 comparison · '+v.quartile.count+'/60 · quartile pending'));
@@ -58,5 +61,8 @@ export function mountStraddlePanel(host,read,onChange){
   finally{loading=false;render();}
  };
  host.addEventListener('straddle-update',event=>{if(event.detail.date!==read.date)return;source=event.detail.sources.find(s=>s.id==='qd-straddle');data=source?.data||{};feed=event.detail.sources.find(s=>s.id==='databento')?.data;history=remember([...(data.history||[]),...(data.opening?.ready?[data.opening]:[])]);refreshed=true;render();onChange();});
- render();return {view};
+ const frozen=read.result.straddleBands;
+ const record=node('details',undefined,'wb-straddle-record');record.append(node('summary','Scoreboard · ranges recorded with this read'));
+ if(frozen){record.append(node('p','Recorded '+time(frozen.recordedAt)+'. Later data updates and reference changes do not replace these bounds.'));for(const kind of ['opening','latest']){const b=frozen[kind];record.append(node('p',b?.ready?kind+' · '+time(b.timestamp)+' · '+straddleSigmaLabel+': '+price(b.oneSigma.lower)+' – '+price(b.oneSigma.upper)+' · ±S: '+price(b.breakeven.lower)+' – '+price(b.breakeven.upper)+' '+read.instrument:kind+' · '+(b?.message||'Unavailable')));}}else record.append(node('p','This older read did not record both bands. Display values are calculated from its saved inputs, not a new forecast.'));
+ box.append(record);render();return {view};
 }

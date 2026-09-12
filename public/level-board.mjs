@@ -73,19 +73,27 @@ export function renderLevelBoard(host,read,{inspectLevel,inspectSource,inspectSc
   for(const [d,c]of [['up','#40ffc1'],['down','#ff5e90'],['neutral','#ffe16a']]){const m=svg('marker',{id:'board-arrow-'+d,markerWidth:8,markerHeight:8,refX:6,refY:3,orient:'auto'});m.append(svg('path',{d:'M0,0 L0,6 L7,3 z',fill:c}));defs.append(m);}root.append(defs);
   root.append(svg('text',{x:14,y:23,fill:'#cce6ff','font-size':18},read.instrument+' LEVEL'),svg('text',{x:890,y:23,fill:'#cce6ff','font-size':18},'SESSION / PROFILE / DEPTH'),svg('text',{x:1350,y:23,fill:'#cce6ff','font-size':18},'LEVEL / CONDITIONAL PLAN / CONFLUENCE'));
   const premium=straddle.view(),clip=p=>Math.max(top,Math.min(bottom,y(p)));
-  root.append(svg('text',{x:-92,y:23,fill:'#40ffc1','font-size':12,'font-weight':700},'STRADDLE'),svg('text',{x:-150,y:23,fill:'#8abaff','font-size':12,'font-weight':700},'VIX 1D'));
+  root.append(svg('text',{x:-92,y:23,fill:'#40ffc1','font-size':12,'font-weight':700},'1σ RANGE'),svg('text',{x:-150,y:23,fill:'#8abaff','font-size':12,'font-weight':700},'VIX 1D'));
   if(premium.vixRange.ready){
    const v=premium.vixRange,g=svg('g',{'data-vix-bar':'true'}),c='#8abaff';
    g.append(svg('rect',{x:-136,y:clip(v.upper),width:13,height:Math.max(2,clip(v.lower)-clip(v.upper)),rx:3,fill:c,opacity:.38,stroke:c,'stroke-width':2}));
    for(const [p,sign]of [[v.upper,'+'],[v.lower,'−']])g.append(svg('line',{x1:-144,x2:-115,y1:clip(p),y2:clip(p),stroke:c,'stroke-width':2}),svg('text',{x:-129,y:clip(p)+(sign==='+'?-8:16),'text-anchor':'middle',fill:c,'font-size':12},(p>max?'↑ ':p<min?'↓ ':'')+sign+priceText(v.points)));
    tip(g,'VIX daily benchmark · ±'+priceText(v.points)+' points',[v.method,'VIX '+priceText(premium.observation.vix)+' · SPX '+priceText(premium.observation.spot)+' · '+v.timestamp,'ES bounds '+priceText(v.lower)+' – '+priceText(v.upper)+' · same-time anchor '+priceText(v.anchor)],()=>inspectSource(premium.source,{title:'VIX daily range benchmark',facts:[v.method,'±'+priceText(v.points)+' points · '+v.timestamp]}));root.append(g);
   }
-  if(premium.observation?.ready&&premium.mapping.ready){
-   const {lower,upper,anchor}=premium.mapping,g=svg('g',{'data-straddle-bar':'true'}),c='#40ffc1';
+  if(premium.observation?.ready&&premium.mapping.ready&&premium.bands.ready){
+   const {lower,upper}=premium.bands.oneSigma,anchor=premium.bands.anchor,g=svg('g',{'data-straddle-bar':'true'}),c='#40ffc1';
    g.append(svg('rect',{x:-62,y:clip(upper),width:14,height:Math.max(2,clip(lower)-clip(upper)),rx:3,fill:c,opacity:.25,stroke:c,'stroke-width':2}));
-   for(const [p,label]of [[upper,'+'+priceText(premium.observation.premium)],[lower,'−'+priceText(premium.observation.premium)]])g.append(svg('line',{x1:-70,x2:-35,y1:clip(p),y2:clip(p),stroke:c,'stroke-width':2}),svg('text',{x:-55,y:clip(p)+(p===upper?-8:16),'text-anchor':'middle',fill:c,'font-size':13,'font-weight':700},(p>max?'↑ ':p<min?'↓ ':'')+label));
+   for(const [p,label]of [[upper,'+'+priceText(premium.bands.oneSigma.points)],[lower,'−'+priceText(premium.bands.oneSigma.points)]])g.append(svg('line',{x1:-70,x2:-35,y1:clip(p),y2:clip(p),stroke:c,'stroke-width':2}),svg('text',{x:-55,y:clip(p)+(p===upper?-8:16),'text-anchor':'middle',fill:c,'font-size':13,'font-weight':700},(p>max?'↑ ':p<min?'↓ ':'')+label));
    g.append(svg('line',{x1:-70,x2:7,y1:clip(anchor),y2:clip(anchor),stroke:c,'stroke-dasharray':'2 3'}),svg('text',{x:-55,y:42,'text-anchor':'middle',fill:'#aee9df','font-size':12},premium.label));
-   tip(g,premium.label+' straddle · ±'+priceText(premium.observation.premium)+' points',premium.facts,()=>inspectSource(premium.source,{title:premium.label+' straddle / VIX',facts:premium.facts}));root.append(g);
+   tip(g,premium.label+' · 1σ (straddle × 0.85) · ±'+priceText(premium.bands.oneSigma.points)+' points',premium.facts,()=>inspectSource(premium.source,{title:premium.label+' straddle / VIX',facts:premium.facts}));root.append(g);
+   for(const [band,style] of [[premium.bands.breakeven,'outer'],[premium.bands.oneSigma,'sigma']]){
+    for(const [p,side] of [[band.upper,'upper'],[band.lower,'lower']]){
+     if(p<min||p>max)continue;
+     const bandLine=svg('g',{'data-straddle-band':style,'data-bound':side,'data-price':p});
+     bandLine.append(svg('line',{x1:-30,x2:1320,y1:y(p),y2:y(p),stroke:c,'stroke-width':style==='sigma'?2:1.5,...(style==='outer'?{'stroke-dasharray':'2 6'}:{}),opacity:style==='sigma'?.8:.65}),svg('text',{x:130,y:y(p)-8,fill:c,'font-size':15,'font-weight':600},(style==='sigma'?'1σ (straddle × 0.85) · estimate':'Raw ±S · breakeven-width')+' · '+priceText(p)));
+     tip(bandLine,band.label+' · '+priceText(p),premium.facts,()=>inspectSource(premium.source,{title:band.label,facts:premium.facts}));root.append(bandLine);
+    }
+   }
    if(premium.multiples&&premium.opening?.ready&&premium.openingMapping.ready){
     for(const sign of [-1,1]){const p=premium.openingMapping.anchor+sign*2*premium.opening.premium;if(p<min||p>max)continue;root.append(svg('line',{x1:-30,x2:1645,y1:y(p),y2:y(p),stroke:'#c797ff','stroke-dasharray':'2 6',opacity:.7}),svg('text',{x:120,y:y(p)-5,fill:'#cfb2ff','font-size':13},'2× opening premium · '+priceText(p)));}
    }
@@ -171,7 +179,7 @@ export function renderLevelBoard(host,read,{inspectLevel,inspectSource,inspectSc
   if(Number.isFinite(last))root.append(svg('line',{x1:10,x2:1330,y1:y(last),y2:y(last),stroke:'#2ce2ff','stroke-width':2,'stroke-dasharray':'5 4'}),svg('rect',{x:112,y:y(last)-21,width:176,height:19,rx:3,fill:'#082442'}),svg('text',{x:120,y:y(last)-7,fill:'#42e8ff','font-size':18,'font-weight':700},'Observed '+priceText(last)));
   root.append(referenceLayer,priceLabels);
   const ruler=node('div',undefined,'wb-chart-ruler');ruler.setAttribute('aria-hidden','true');plot.append(ruler,root);const rulerScale=root.getBoundingClientRect().width/(W+160);ruler.style.width=root.getBoundingClientRect().width+'px';
-  for(const [x,label]of [[-148,'VIX'],[-88,'Straddle'],[14,read.instrument+' LEVEL'],...groups.map(g=>[g.x,g.label]),[890,'SESSION / PROFILE'],[1350,'LEVEL / HOW TO TRADE']]){const labelNode=node('span',label);labelNode.style.left=((x+160)*rulerScale)+'px';labelNode.style.fontSize=((x<0?12:16)*rulerScale)+'px';ruler.append(labelNode);}
+  for(const [x,label]of [[-148,'VIX'],[-88,'1σ range'],[14,read.instrument+' LEVEL'],...groups.map(g=>[g.x,g.label]),[890,'SESSION / PROFILE'],[1350,'LEVEL / HOW TO TRADE']]){const labelNode=node('span',label);labelNode.style.left=((x+160)*rulerScale)+'px';labelNode.style.fontSize=((x<0?12:16)*rulerScale)+'px';ruler.append(labelNode);}
   if(planVisible)plot.scrollLeft=plot.scrollWidth-plot.clientWidth;
   viewGeometry={min,max,top,bottom,scale:root.getBoundingClientRect().width/(W+160)};centerPlot(Number.isFinite(focusPrice)?Math.max(min,Math.min(max,focusPrice)):spot);zoom.setAttribute('aria-valuetext','Plus or minus '+visibleSpan+' points');
  }

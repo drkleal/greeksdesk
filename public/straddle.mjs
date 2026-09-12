@@ -64,3 +64,32 @@ export function vixDailyRange(observation,mapping){
  return {ready:true,points,lower:mapping.anchor-points,upper:mapping.anchor+points,anchor:mapping.anchor,timestamp:observation.timestamp,
   method:'SPX × VIX / 100 / √252, centered on the matching ES observation. One-day volatility scaling benchmark; VIX measures a longer options horizon. Not a guaranteed range or additional straddle premium.'};
 }
+
+// Store deterministic range estimates separately from model-authored analysis.
+export const straddleSigmaFactor = 0.85;
+export const straddleSigmaLabel = '1σ (straddle × 0.85)';
+export function straddleBands(observation,mapping){
+ if(!observation?.ready||!positive(observation.premium)||!positive(observation.strike)||!positive(observation.spot)||!Number.isFinite(Date.parse(observation.timestamp)))return {ready:false,message:observation?.message||'Matched straddle unavailable.'};
+ if(![observation.call,observation.put].every(positive)||Math.abs(observation.call+observation.put-observation.premium)>1e-8)return {ready:false,message:'Both option legs must match the raw premium.'};
+ if(!mapping?.ready||!positive(mapping.anchor))return {ready:false,message:mapping?.message||'No matching price anchor.'};
+ const raw=observation.premium,sigma=raw*straddleSigmaFactor,anchor=mapping.anchor;
+ const band=(points,label)=>({points,lower:anchor-points,upper:anchor+points,label});
+ const strikeAnchor=observation.strike+(anchor-observation.spot);
+ return {ready:true,version:1,anchor,timestamp:observation.timestamp,expirationDate:observation.expirationDate,strike:observation.strike,
+  rawStraddle:raw,call:observation.call,put:observation.put,spot:observation.spot,basis:anchor-observation.spot,sigmaFactor:straddleSigmaFactor,breakeven:band(raw,'Breakeven band (±S)'),oneSigma:band(sigma,straddleSigmaLabel+' · estimate'),
+  exactOptionBreakevens:{anchor:strikeAnchor,lower:strikeAnchor-raw,upper:strikeAnchor+raw},
+  method:'Price-centered bands: ±S and ±0.85 × S. The 1σ label is a straddle-based estimate, not calibrated 68% coverage. Exact option expiration breakevens are strike ± S, before costs; mapped ES equivalents use the observation-time basis.'};
+}
+export function snapshotStraddleBands(packet,recordedAt){
+ const source=packet.sources.find(s=>s.id==='qd-straddle'),data=source?.data||{},feed=packet.sources.find(s=>s.id==='databento')?.data;
+ const selected=data.state==='cash-session'&&data.latest?.ready?'latest':'opening';
+ const records={};
+ for(const kind of ['opening','latest']){
+  const observation=data[kind];
+  const mapping=packet.instrument==='ES'?esPremiumRange(observation,feed):packet.instrument==='SPX'&&observation?.ready?{ready:true,anchor:observation.spot}:{};
+  const invalid=observation?.ready&&(!Number.isFinite(Date.parse(recordedAt))||Date.parse(observation.timestamp)>Date.parse(recordedAt));
+  records[kind]={kind,...(invalid?{ready:false,message:'Straddle observation is later than this read.'}:straddleBands(observation,mapping)),
+   observationTime:observation?.timestamp||null,sourceSessionDate:observation?.sessionDate||null,contract:packet.instrument==='ES'?feed?.contract||null:'SPX'};
+ }
+ return {version:1,recordedAt,sessionDate:packet.date,instrument:packet.instrument,sourceId:source?.id||null,selected,...records};
+}
