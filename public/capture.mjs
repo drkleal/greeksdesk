@@ -32,3 +32,5 @@ export async function listReads(){const db=await database();try{return await new
 export async function saveRead(read){const existing=await listReads(),db=await database();try{await new Promise((resolve,reject)=>{const tx=db.transaction('reads','readwrite'),store=tx.objectStore('reads');store.put(read);for(const old of existing.slice(19))store.delete(old.id);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});}finally{db.close();}}
 
 export async function loadAnalysisRecovery(){const db=await database();try{return await new Promise((resolve,reject)=>{const r=db.transaction('drafts').objectStore('drafts').get('analysis-recovery');r.onsuccess=()=>resolve(r.result||null);r.onerror=()=>reject(r.error);});}finally{db.close();}}
+
+export async function loadSharedBackup(){const db=await database();try{return await new Promise((resolve,reject)=>{const r=db.transaction('drafts').objectStore('drafts').get('shared-session-local-backup');r.onsuccess=()=>resolve(r.result?.state||null);r.onerror=()=>reject(r.error);});}finally{db.close();}}

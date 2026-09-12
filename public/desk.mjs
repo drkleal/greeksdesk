@@ -1,4 +1,5 @@
-import {mountChartIntake} from './chart-intake.mjs';
+import {mountSharedSession} from './shared-session-client.mjs';
+import {mountChartIntake,chartSlots} from './chart-intake.mjs';
 import {renderBasisDisplay} from './basis-display.mjs';
 import {analysisReadiness} from './analysis-readiness.mjs';
 import {renderSourceStatus} from './source-status.mjs';
@@ -6,7 +7,7 @@ import {renderWorkbench,refreshWorkbenchAge,markWorkbenchOld,refreshWorkbenchMar
 import {connectorRequest} from './connector.mjs';
 import {chartDateCaption,enforceEvidenceScope,evidencePolicyVersion} from './evidence-policy.mjs';
 import {createUpdateLoop} from './update-loop.mjs';
-import {startChartShare,resizeChart,listReads,saveRead,saveChartDraft,saveESDraft,chartImageBlob,loadAnalysisRecovery} from './capture.mjs';
+import {startChartShare,resizeChart,listReads,saveRead,saveChartDraft,saveESDraft,chartImageBlob,loadAnalysisRecovery,loadSharedBackup} from './capture.mjs';
 import {node,renderMap,sourceLink} from './map.mjs';
 import {renderEvidence,showEvidenceTab,focusEvidence} from './evidence.mjs';
 import {levelDetails,priceText,directionTitle,scenarioRoute,quoteStatus,selectESSource} from './plan.mjs';
@@ -21,7 +22,7 @@ function rememberSession(){try{localStorage.setItem('greeksdesk-session',JSON.st
 rememberSession();
 let connectorEnabled=false,databentoConfigured=false,massiveConfigured=false;
 let appConfig;
-let displayedESFeed=null,intake=null;
+let displayedESFeed=null,intake=null,sharedSession=null;
 const basisDisplay=node('section',undefined,'panel');basisDisplay.setAttribute('aria-label','SPX to ES conversion');$('chart-intake').before(basisDisplay);
 let sources=[],charts=[],read=null,share=null,busy=false,revision=0,cycles=0,analyses=0,manualMode=null,lastUpdateWarnings=[];
 let savedRecovery=null,recoveryRevision=0;
@@ -32,7 +33,7 @@ const freshnessHost=node('section',undefined,'panel source-freshness');$('workbe
 renderSourceStatus(freshnessHost,$('session').value,sources);
 const links={quantdata:'https://v3.quantdata.us/page/custom/4e4699d7-e026-4cd8-9f43-24c832d25857',gamma:'https://app.optionsdepth.com/dashboard?tab=table'};
 const message=t=>{$('status').textContent=t;intake?.setProgress(t);};
-function lock(value){busy=value;intake?.setBusy(value);$('analyze').textContent=value?'Working…':'Update & analyze';for(const id of ['update','analyze','session','instrument','basis','include-gamma','auto-analysis','upload','share','connect-charts','es-image','confirm-es','es-price-time','retry-basis','analyze-es','es-contract'])$(id).disabled=value;}
+function lock(value){busy=value;if(!value)sharedSession?.changed();intake?.setBusy(value);$('analyze').textContent=value?'Working…':'Update & analyze';for(const id of ['update','analyze','session','instrument','basis','include-gamma','auto-analysis','upload','share','connect-charts','es-image','confirm-es','es-price-time','retry-basis','analyze-es','es-contract'])$(id).disabled=value;}
 function usage(){$('usage').textContent=`This tab: ${cycles} update cycles · ${analyses} analysis requests. Provider charges include uncached OptionsDepth collections; consult provider usage for billing.`;}
 function showSources(){renderSourceStatus(freshnessHost,$('session').value,sources);const host=$('sources');host.replaceChildren();for(const s of sources){const card=node('div',undefined,'source');card.append(node('h3',s.title));const a=sourceLink(s.url);if(a)card.append(a);card.append(node('p','Session '+s.sessionDate+' · checked '+new Date(s.capturedAt).toLocaleString(),'muted'));const details=node('details');details.append(node('summary','Inspect returned data'));details.append(node('pre',JSON.stringify(s.data,null,2)));card.append(details);host.append(card);}}
 function chartViewer(source){const dialog=node('dialog',undefined,'chart-viewer'),close=node('button','Close chart'),img=node('img');img.src=source.image;img.alt=source.title;close.addEventListener('click',()=>dialog.close());dialog.append(close,node('h2',source.title),node('p',chartDateCaption(source)),img);if(source.captureNote)dialog.append(node('p',source.captureNote,'muted'));const link=sourceLink(source.url);if(link)dialog.append(link);dialog.addEventListener('close',()=>dialog.remove());document.body.append(dialog);dialog.showModal();}
@@ -42,7 +43,7 @@ async function openPanel(panel){const source=read.sources.find(s=>s.id===panel.s
 function panelButton(panel){const b=node('button','Open '+panel.title);b.addEventListener('click',()=>openPanel(panel));return b;}
 function renderPanels(){renderEvidence(read,{panelButton,chartButton,onLevel:explain});}
 for(const id of ['evidence','levels'])$('tab-'+id).addEventListener('click',()=>showEvidenceTab(id));
-function markOld(){revision++;if(read){markWorkbenchOld($('workbench'));message('Inputs changed. The previous analysis remains below; Update & analyze will use your new chart.');$('read-state').textContent='Inputs changed';$('read-time').textContent='Previous read below · analyze again to apply current inputs.';}}
+function markOld(){revision++;sharedSession?.changed();if(read){markWorkbenchOld($('workbench'));message('Inputs changed. The previous analysis remains below; Update & analyze will use your new chart.');$('read-state').textContent='Inputs changed';$('read-time').textContent='Previous read below · analyze again to apply current inputs.';}}
 function valid(){if(!validDate($('session').value)||!$('session').reportValidity()){message('Select the chart’s session date before adding or analyzing it.');return false;}if($('instrument').value==='ES'&&($('basis').value!==''&&!$('basis').reportValidity())){message('Enter a verified ES minus SPX difference, or leave it empty to use native ES chart levels.');return false;}rememberSession();return true;}
 async function provider(name,date,extra={}){try{const response=await fetch('/api/check?'+new URLSearchParams({provider:name,date,...extra}),{method:'POST',signal:AbortSignal.timeout(120000),headers:{'X-GreeksDesk-Action':'manual-check'}});if(!response.ok)throw Error(response.status===401?'Your sign-in expired. Sign in again, then retry.':name+' data request failed (HTTP '+response.status+').');const result=await response.json();if(!result.ok||!result.count)throw Error(result.message||name+' returned no usable data.');return result;}catch(error){if(error.name==='TimeoutError'||error.name==='AbortError')throw Error(name+' did not respond within 2 minutes. Continuing with the available evidence.');throw error;}}
 function captureFrame(){if(!share)return;const image=share.frame(),record={id:'shared-chart',title:$('chart-title').value.trim()||'Shared chart',url:$('chart-url').value,sessionDate:$('session').value,capturedAt:new Date().toISOString(),image};charts=charts.filter(c=>c.id!==record.id);if(charts.length>=8)throw Error('Remove an attached chart to make room for the shared chart.');charts.push(record);showCharts();}
@@ -203,7 +204,7 @@ $('upload').addEventListener('change',async e=>{await attach(e.target.files);e.t
 document.addEventListener('paste',e=>{const files=[...(e.clipboardData?.files||[])];if(files.length){e.preventDefault();if(e.target.closest?.('#es-drop'))inspectES(files[0]);else if(!e.target.closest?.('[data-paste-slot]'))attach(files);}});
 $('export').addEventListener('click',()=>{if(!read)return;const url=URL.createObjectURL(new Blob([JSON.stringify(read,null,2)],{type:'application/json'})),a=node('a');a.href=url;a.download='greeksdesk-'+read.date+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
 window.addEventListener('pagehide',()=>{loop.stop();share?.stop();});
-refreshHistory(true);
+const localHistoryReady=refreshHistory(true);
 
 appConfig=fetch('/api/config',{signal:AbortSignal.timeout(30000)}).then(r=>r.json()).then(c=>{databentoConfigured=!!c.databentoConfigured;massiveConfigured=!!c.massiveConfigured;$('es-feed-status').textContent=massiveConfigured?'ES price connections configured. Update data checks the available feeds and preserves Databento history.':databentoConfigured?'Databento configured · Update data checks ES prices.':'Databento not configured. ES screenshots remain available.';$('configuration').textContent=c.analysisConfigured?'Analysis connected. Selected data and images are sent to OpenAI only when analysis is requested.':'Add OPENAI_API_KEY in Fly secrets to enable analysis. Data updates and local charts still work.';}).catch(()=>{$('configuration').textContent='Unable to check analysis connection.';});
 
@@ -256,3 +257,27 @@ intake=mountChartIntake($('chart-intake'),{
  analyze:()=>$('analyze').click(),changed:markOld
 });
 compactES(true);
+
+const sharedHost=node('section',undefined,'panel');sharedHost.id='shared-session';$('chart-intake').before(sharedHost);
+sharedSession=mountSharedSession(sharedHost,{
+ locked:()=>busy,
+ getState:()=>({version:1,date:$('session').value,instrument:$('instrument').value,basis:$('instrument').value==='ES'?($('basis').value===''?null:Number($('basis').value)):0,charts:structuredClone(charts.filter(c=>c.sessionDate===$('session').value)),read:read?structuredClone(read):null}),
+ backup:state=>saveChartDraft({id:'shared-session-local-backup',state}),loadBackup:loadSharedBackup,
+ applyState:async state=>{
+  loop.stop('Opened shared session. Auto off.');revision++;
+  $('session').value=state.date;$('instrument').value=state.instrument;rememberSession();contextLabel();
+  charts=structuredClone(state.charts);sources=state.read?.date===state.date?structuredClone(state.read.sources.filter(s=>!s.image)):[];
+  for(const slot of chartSlots)if(!charts.some(c=>c.id===slot.id))await saveChartDraft(null,slot.id);
+  if(!charts.some(c=>c.id==='es-snapshot'))await saveESDraft(null);
+  for(const chart of charts)await saveChartDraft(chart);
+  $('basis').value=state.basis??'';$('basis-label').hidden=state.instrument!=='ES';basisProposal=null;$('apply-basis').hidden=true;
+  const es=charts.find(c=>c.id==='es-snapshot');$('es-preview').hidden=!es;if(es)$('es-preview').src=es.image;else $('es-preview').removeAttribute('src');
+  $('confirm-es').checked=!!es?.confirmedContext;$('es-price-time').value=es?.confirmedContext?.priceTime||'';
+  $('basis-result').textContent='Shared saved session · '+state.date+'. Prices, charts and any basis are historical observations; update data to refresh them.';
+  showSources();showCharts();showPrice();
+  if(state.read){await saveRead(state.read);adoptSavedRead(state.read);await refreshHistory();}
+  else{read=null;$('read-state').textContent='Not analyzed';$('read-time').textContent='No completed analysis in this shared session.';$('workbench').replaceChildren();$('analysis-archive').open=false;$('analysis-archive-title').textContent='Shared session · no completed analysis';$('export').disabled=true;}
+  message('Opened shared session '+state.date+'. No analysis request or market-data refresh was made.');
+ }
+});
+Promise.all([intake.whenReady(),localHistoryReady]).then(()=>sharedSession.start());

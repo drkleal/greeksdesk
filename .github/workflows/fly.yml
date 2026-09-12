@@ -19,6 +19,7 @@ jobs:
           node-version: '22'
       - name: Run checks
         run: |
+          npm ci
           node --test
           python3 -m unittest discover -s test -p 'test_*.py'
       - name: Verify packaged app starts

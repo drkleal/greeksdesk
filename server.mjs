@@ -1,3 +1,4 @@
+import {createSharedSession,sessionLimit} from './shared-session.mjs';
 import http from 'node:http';
 import {createAnalysisRecovery} from './analysis-recovery.mjs';
 import {createMarketContext} from './market-context.mjs';
@@ -15,7 +16,8 @@ import { fileURLToPath } from 'node:url';
 import { createProviderChecks } from './providers.mjs';
 import { createAnalyzer } from './analysis.mjs';
 
-export function createServer(password = process.env.DESK_PASSWORD, {analysisOptions={}}={}) {
+export function createServer(password = process.env.DESK_PASSWORD, {analysisOptions={},sharedSessionOptions={}}={}) {
+  const sharedSession=createSharedSession(sharedSessionOptions);
   const auth=password?createDeskAuth(password):null;
   const openingHistory=createOpeningHistory();
   const baseCheck = createProviderChecks(), marketContext = createMarketContext({openingHistory}), odContext=createOptionsDepthContext(), esData=createDatabento(), massiveData=createMassive();
@@ -56,6 +58,15 @@ export function createServer(password = process.env.DESK_PASSWORD, {analysisOpti
       res.writeHead(401,{'Content-Type':'application/json'});
       return res.end(JSON.stringify({ok:false,message:'Your session expired. Sign in to GreeksDesk again.'}));
     }
+    if(req.url==='/api/shared-session'){
+      if(!['GET','POST'].includes(req.method)||req.headers['sec-fetch-site']==='cross-site'||(req.method==='POST'&&req.headers['x-greeksdesk-action']!=='manual-check')){res.writeHead(403);return res.end();}
+      try{
+        let result;
+        if(req.method==='GET')result=await sharedSession.load();
+        else{const chunks=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>sessionLimit){res.writeHead(413);return res.end();}chunks.push(chunk);}result=await sharedSession.save(JSON.parse(Buffer.concat(chunks).toString('utf8')));}
+        res.writeHead(result.code==='conflict'?409:result.ok?200:503,{'Content-Type':'application/json'});return res.end(JSON.stringify(result));
+      }catch{res.writeHead(503,{'Content-Type':'application/json'});return res.end(JSON.stringify({ok:false,message:'Shared saving is unavailable or this snapshot is invalid. Your local work is unchanged. Try Save shared session again.'}));}
+    }
     if (req.url === '/api/config') {
       res.writeHead(200, {'Content-Type':'application/json'});
       return res.end(JSON.stringify({analysisConfigured:!!process.env.OPENAI_API_KEY,databentoConfigured:!!process.env.DATABENTO_API_KEY,massiveConfigured:!!(process.env.POLYGON_API_KEY||process.env.MASSIVE_API_KEY)}));
@@ -91,6 +102,7 @@ export function createServer(password = process.env.DESK_PASSWORD, {analysisOpti
       return res.end();
     }
     const scripts = {'/evidence-policy.mjs':'./public/evidence-policy.mjs','/plan.mjs':'./public/plan.mjs','/evidence.mjs':'./public/evidence.mjs','/session.mjs':'./public/session.mjs','/connector.mjs':'./public/connector.mjs','/desk.mjs':'./public/desk.mjs','/desk.css':'./public/desk.css','/map.mjs':'./public/map.mjs','/capture.mjs':'./public/capture.mjs','/exposure.js':'./public/exposure.js','/connections.mjs':'./public/connections.mjs','/update-loop.mjs':'./public/update-loop.mjs'};
+    scripts['/shared-session-client.mjs']='./public/shared-session-client.mjs';
     scripts['/price-evidence.mjs']='./public/price-evidence.mjs';
     for(const asset of ['basis-display.mjs','workbench.mjs','confluence.mjs','workbench.css','chart-intake.mjs','chart-restore.mjs','analysis-readiness.mjs','level-board.mjs','straddle.mjs','straddle-panel.mjs','verification.mjs','level-brief.mjs','exposure-display.mjs','source-status.mjs'])scripts['/'+asset]='./public/'+asset;
     if (!['/', '/index.html', '/preview', '/connections', '/connector', '/chart-connector.zip', ...Object.keys(scripts)].includes(req.url)) {
