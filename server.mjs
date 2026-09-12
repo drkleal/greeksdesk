@@ -104,7 +104,7 @@ export function createServer(password = process.env.DESK_PASSWORD, {analysisOpti
     const scripts = {'/evidence-policy.mjs':'./public/evidence-policy.mjs','/plan.mjs':'./public/plan.mjs','/evidence.mjs':'./public/evidence.mjs','/session.mjs':'./public/session.mjs','/connector.mjs':'./public/connector.mjs','/desk.mjs':'./public/desk.mjs','/desk.css':'./public/desk.css','/map.mjs':'./public/map.mjs','/capture.mjs':'./public/capture.mjs','/exposure.js':'./public/exposure.js','/connections.mjs':'./public/connections.mjs','/update-loop.mjs':'./public/update-loop.mjs'};
     scripts['/shared-session-client.mjs']='./public/shared-session-client.mjs';
     scripts['/price-evidence.mjs']='./public/price-evidence.mjs';
-    for(const asset of ['basis-display.mjs','workbench.mjs','confluence.mjs','workbench.css','chart-intake.mjs','chart-restore.mjs','analysis-readiness.mjs','level-board.mjs','straddle.mjs','straddle-panel.mjs','verification.mjs','level-brief.mjs','exposure-display.mjs','source-status.mjs'])scripts['/'+asset]='./public/'+asset;
+    for(const asset of ['basis-display.mjs','workbench.mjs','confluence.mjs','workbench.css','chart-intake.mjs','chart-restore.mjs','analysis-readiness.mjs','level-board.mjs','straddle.mjs','straddle-panel.mjs','verification.mjs','level-brief.mjs','exposure-display.mjs','source-status.mjs','gamma-freshness.mjs'])scripts['/'+asset]='./public/'+asset;
     if (!['/', '/index.html', '/preview', '/connections', '/connector', '/chart-connector.zip', ...Object.keys(scripts)].includes(req.url)) {
       res.writeHead(404);
       return res.end('Not found');

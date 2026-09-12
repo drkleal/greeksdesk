@@ -12,7 +12,7 @@ test('refreshing a request cannot make old data fresh',()=>{
 });
 test('fresh ES status ages out and models never claim freshness from coordinates',()=>{
  assert.equal(sourceStatus({id:'databento',data:{freshness:'fresh',latestTimestamp:new Date(now-21000).toISOString(),latestPrice:7714}},'2026-09-07',now).label,'ES price is not live');
- assert.equal(sourceStatus({id:'od-gex-mm-strike',data:{actualSlot:'2026-09-07T10:01:00',checkedAt:new Date(now).toISOString()}},'2026-09-07',now).label,'Model context');
+ assert.equal(sourceStatus({id:'od-gex-mm-strike',data:{actualSlot:'2026-09-07T10:01:00',checkedAt:new Date(now).toISOString()}},'2026-09-07',now).label,'Model slot \u00b7 0 min old');
 });
 test('empty and failed providers remain visible as unavailable',()=>{
  assert.equal(sourceStatus({id:'qd-oi-expiration',data:{rowCount:0}},'2026-09-07',now).state,'unavailable');

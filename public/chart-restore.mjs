@@ -7,7 +7,7 @@ export function createChartRestore({load,accept,currentDate,locked,versions,onRe
    const drafts=await load(date);let count=0;
    for(const source of drafts){
     if(token!==generation||currentDate()!==date||locked())break;
-    if(source.sessionDate!==date||versions.get(source.id)!==before.get(source.id))continue;
+    if((source.sessionDate!==date&&source.id!=='paste-dg')||versions.get(source.id)!==before.get(source.id))continue;
     if(await accept(source)){onRestored(source);count++;}
    }
    return count;

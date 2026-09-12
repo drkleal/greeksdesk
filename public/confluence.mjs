@@ -1,3 +1,4 @@
+import {freshnessConstraint} from './gamma-freshness.mjs';
 import {evidenceConstraint} from './evidence-policy.mjs';
 import {evidenceCoverage} from './evidence.mjs';
 import {cashSession,nyTime} from './session.mjs';
@@ -22,7 +23,7 @@ export function familyFor(title=''){
 }
 export function familyInventory(read){
  const coverage=evidenceCoverage(read);
- return families.map(f=>({...f,items:coverage.filter(i=>(i.source?.data?.family||familyFor(i.title))===f.id||(f.id==='acceptance'&&i.source?.id==='databento'&&i.source.data?.volumeProfile?.available))}));
+ return families.map(f=>({...f,items:coverage.filter(i=>freshnessConstraint(i.source,read)?.effect!=='unavailable').filter(i=>(i.source?.data?.family||familyFor(i.title))===f.id||(f.id==='acceptance'&&i.source?.id==='databento'&&i.source.data?.volumeProfile?.available))}));
 }
 export function conversionFor(read){
  if(read.instrument==='SPX')return {kind:'native',basis:0,label:'Native SPX coordinates'};
