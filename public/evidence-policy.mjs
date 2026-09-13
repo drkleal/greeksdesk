@@ -1,6 +1,6 @@
 import {freshnessConstraint} from './gamma-freshness.mjs';
 import {noObservations} from './data-availability.mjs';
-export const evidencePolicyVersion=2;
+export const evidencePolicyVersion=3;
 
 export function sourceInstrument(source,panel){
  if(panel)return panel.instrument;

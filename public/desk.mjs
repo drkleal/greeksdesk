@@ -149,7 +149,7 @@ function adoptSavedRead(record){
  if(olderCheckpoints)read.result.analysis.gaps.unshift('This saved read has not checked obstacles independently of its six map levels. Update & analyze to rebuild the path distances.');
  const olderScope=read.result.analysis.evidencePolicyVersion!==evidencePolicyVersion&&read.result.model!=='source-reference-summary';
  if(olderScope){
-  for(const scenario of read.result.analysis.scenarios){scenario.status='insufficient';scenario.triggerId=null;scenario.targetId=null;scenario.condition='Rebuild this saved plan with the current source checks.';scenario.rationale='This archived plan predates the checks separating cross-instrument and forward-model evidence from price confirmation.';scenario.confirmation='Update & analyze rebuilds the plan from current supplied evidence.';scenario.invalidation='Archived path withheld pending a new analysis.';}
+  for(const scenario of read.result.analysis.scenarios){scenario.status='insufficient';scenario.triggerId=null;scenario.targetId=null;scenario.condition='Rebuild this saved plan with the current source checks.';scenario.rationale='This archived plan predates the current price, citation and evidence checks.';scenario.confirmation='Update & analyze rebuilds the plan from current supplied evidence.';scenario.invalidation='Archived path withheld pending a new analysis.';}
   read.result.analysis.gaps.unshift('Saved plan predates the current evidence checks. Update & analyze to rebuild its scenarios.');
  }
  const olderExposure=read.sources.some(s=>/^qd-(gamma|delta|vanna|charm)$/.test(s.id)&&s.data?.normalizationVersion!==2);
