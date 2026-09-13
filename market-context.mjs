@@ -1,6 +1,7 @@
 // Fixed, documented Quant Data endpoints. Credentials never leave the server response boundary.
 import {collectQuantPanels} from './quant-panels.mjs';
 import {collectStraddle} from './straddle-provider.mjs';
+import {observationAvailability} from './public/data-availability.mjs';
 const object=v=>v&&typeof v==='object'&&!Array.isArray(v);
 const finite=Number.isFinite;
 // Quant Data omits a leg when it has no exposure. Explicit null/invalid values
@@ -73,7 +74,7 @@ export function createMarketContext({env=process.env,request=fetch,openingHistor
   async function post(path,body,normalize){
    calls++;try{const r=await request('https://api.quantdata.us'+path,{method:'POST',redirect:'error',signal:AbortSignal.timeout(20000),headers:{Authorization:'Bearer '+env.QUANT_DATA_API_KEY,'Content-Type':'application/json'},body:JSON.stringify(body)});
     if(!r.ok)return {available:false,message:'Provider returned HTTP '+r.status};
-    return {available:true,...normalize(await r.json())};
+    return observationAvailability({available:true,...normalize(await r.json())});
    }catch{return {available:false,message:'Provider timed out or returned an unrecognized response. No retry made.'};}
   }
   try{

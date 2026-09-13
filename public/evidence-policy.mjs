@@ -1,4 +1,5 @@
-export const evidencePolicyVersion=1;
+import {noObservations} from './data-availability.mjs';
+export const evidencePolicyVersion=2;
 
 export function sourceInstrument(source,panel){
  if(panel)return panel.instrument;
@@ -10,13 +11,13 @@ export function sourceInstrument(source,panel){
 // These constraints also apply when opening a saved read in the browser.
 export function evidenceConstraint(source,panel,packet){
  if(source?.data?.chartScope==='multi_day_context')return {effect:'context',reason:'User-supplied multi-day volume profile: background context only. Composite VAH/VAL are not chart levels or independent confirmation.'};
- if(source?.data?.available===false||panel?.status==='excluded')return {effect:'unavailable',reason:'This source was unavailable or excluded from this read. It cannot confirm or oppose the setup.'};
+ if(source?.data?.available===false||source?.data?.ok===false||(!source?.image&&!panel&&noObservations(source?.data))||panel?.status==='excluded')return {effect:'unavailable',reason:'This source was unavailable, empty or excluded from this read. It cannot confirm or oppose the setup.'};
  if(panel?.dateRole==='projected_session')return {effect:'context',reason:'Forward model for '+panel.observedDate+'; planning context only, not observed price response in the '+packet.date+' session.'};
  if(panel&&(panel.observedDate!==packet.date||panel.dateRole!=='observed_session'||panel.dateEvidence==='unknown'))return {effect:'context',reason:'The panel does not establish an observed date matching this session. Its values cannot confirm these price boundaries.'};
  const instrument=sourceInstrument(source,panel),mapped=instrument===packet.instrument||(packet.instrument==='ES'&&instrument==='SPX'&&Number.isFinite(packet.basis));
  if(!mapped)return {effect:'context',reason:instrument==='SPX'&&packet.instrument==='ES'?'SPX coordinates; no matched ES–SPX basis was supplied for this read. These prices cannot be located above, below or at the ES setup. See the source finding for the separate SPX observations.':(instrument||'Unidentified instrument')+' observations are separate context for this '+packet.instrument+' map, not matching price levels or confirmation of its boundaries.'};
  if(panel?.status==='context')return {effect:'context',reason:'This panel is classified as context. It does not independently establish the setup; see the panel finding for its scope and limitations.'};
- if(!panel&&(source?.id==='gamma'||/^qd-(gamma|delta|vanna|charm)$/.test(source?.id||'')))return {effect:'context',reason:'Exposure model context. Raw Greek signs and extrema alone do not establish dealer inventory, buying or selling, or a price response at this boundary. Confirmation must come from matching price evidence.'};
+ if(!panel&&(source?.id==='gamma'||/^qd-(gamma|delta|vanna|charm)$/.test(source?.id||'')||['gamma','delta','vanna','charm'].includes(source?.data?.family)))return {effect:'context',reason:'Exposure model context. Raw Greek signs and extrema alone do not establish dealer inventory, buying or selling, or a price response at this boundary. Confirmation must come from matching price evidence.'};
  return null;
 }
 

@@ -16,6 +16,21 @@ export const today=()=>nyTime().date;
 const shiftDate=(date,days)=>new Date(Date.parse(date+'T12:00:00Z')+days*86400000).toISOString().slice(0,10);
 // Futures trade after 18:00 ET belongs to the following calendar session.
 export function esSessionDate(now=new Date()) {const p=nyTime(now);return p.seconds>=18*3600?shiftDate(p.date,1):p.date;}
+// Display the last observed futures window during the weekend, then Monday
+// after Sunday's 18:00 ET reopen. This is not a holiday clearing calendar.
+export function observedESSession(now=new Date()){
+ const p=nyTime(now),weekday=new Date(p.date+'T12:00:00Z').getUTCDay();
+ if(weekday===5&&p.seconds>=17*3600)return p.date;
+ if(weekday===6)return shiftDate(p.date,-1);
+ if(weekday===0&&p.seconds<18*3600)return shiftDate(p.date,-2);
+ return esSessionDate(now);
+}
+export function marketClock(now=new Date()){
+ const p=nyTime(now),weekday=new Date(p.date+'T12:00:00Z').getUTCDay(),cash=cashSession(p.date);
+ const weekend=(weekday===5&&p.seconds>=17*3600)||weekday===6||(weekday===0&&p.seconds<18*3600);
+ return {esSession:observedESSession(now),cashOpen:!!cash&&p.seconds>=cash.open&&p.seconds<cash.close,
+  futures:weekend?'Weekend closure':p.seconds>=17*3600&&p.seconds<18*3600?'Daily maintenance window':'Within ordinary futures hours · holiday exceptions may apply'};
+}
 export function esSessionBounds(date){
  if(!validDate(date))throw Error('Invalid ES session date');
  const localInstant=(day,hour)=>{const wall=Date.parse(day+'T'+String(hour).padStart(2,'0')+':00:00Z'),p=nyTime(wall),localWall=Date.parse(p.date+'T00:00:00Z')+p.seconds*1000;return new Date(wall+(wall-localWall)).toISOString();};

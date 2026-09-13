@@ -1,4 +1,5 @@
-import {cashSession,nyTime} from './session.mjs';
+import {cashSession,nyTime,marketClock} from './session.mjs';
+import {noObservations} from './data-availability.mjs';
 
 const time=t=>typeof t==='number'?t:typeof t==='string'?Date.parse(t):NaN;
 const when=t=>new Date(t).toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit'})+' ET';
@@ -6,6 +7,7 @@ export function sourceStatus(source,date,now=Date.now()){
  const d=source.data||{},base={title:source.title,state:'context',label:'Observation time unverified',detail:'A successful request does not establish when these values changed.'};
  if(source.sessionDate&&source.sessionDate!==date)return {...base,label:'Different session',detail:`Saved source for ${source.sessionDate}; not an observation for ${date}.`};
  if(d.available===false||d.ok===false)return {...base,state:'unavailable',label:'Unavailable',detail:d.message||'No usable data returned on this update.'};
+ if(noObservations(d))return {...base,state:'unavailable',label:'No observations returned',detail:'This source supplies no data for the selected request.'};
  if(d.snapshotFallback)return {...base,label:'Earlier model snapshot',detail:`Using ${d.actualSlot||d.collectionSlot} (provider time coordinate). The selected after-close snapshot was empty; this is dated context, not live dealer activity.`};
  if(source.id==='timestamps'||source.id.startsWith('od-')||source.id==='gamma')return {...base,label:'Model context',detail:'Model time coordinates are not verified update times. Do not treat this as confirmation of new dealer activity.'};
  if(['databento','massive-es'].includes(source.id)){
@@ -17,10 +19,9 @@ export function sourceStatus(source,date,now=Date.now()){
  const t=tradeTimes.length?Math.max(...tradeTimes):time(d.latestTimestamp);
  if(Number.isFinite(t)){
   const sameDay=nyTime(t)?.date===date,age=(now-t)/1000,fresh=sameDay&&age>=0&&age<=180;
-  const cashClosed=!cashSession(date);
+  const cashClosed=!marketClock(now).cashOpen;
   return {...base,state:fresh?'fresh':'context',label:fresh?(tradeTimes.length?'Recent option trades':'Recent data buckets'):'Earlier observation',detail:`${when(t)}${tradeTimes.length?' · latest trade in this returned sample':recent.length?' · latest returned bucket':''}.`+(cashClosed?' Cash SPX is closed; the attached stock price is not a live ES quote or a matched basis.':'')};
  }
- if(d.rowCount===0||d.bucketCount===0)return {...base,state:'unavailable',label:'No observations returned',detail:'This source supplies no data for the selected request.'};
  return base;
 }
 

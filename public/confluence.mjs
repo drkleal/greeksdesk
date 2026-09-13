@@ -20,6 +20,12 @@ export function familyFor(title=''){
  if(/flow|drift|sweep|gainer/.test(t))return 'flow';
  if(/databento|\bes\b|deepcharts/.test(t))return 'price';return null;
 }
+// API families belong to the source contract, not to generated prose.
+function sourceFamily(source,panel,claimed){
+ if(panel||source?.image)return claimed;
+ if(source?.id==='databento')return claimed==='acceptance'&&source.data?.volumeProfile?.available?'acceptance':'price';
+ return source?.data?.family||familyFor(source?.title)||claimed;
+}
 export function familyInventory(read){
  const coverage=evidenceCoverage(read);
  return families.map(f=>({...f,items:coverage.filter(i=>(i.source?.data?.family||familyFor(i.title))===f.id||(f.id==='acceptance'&&i.source?.id==='databento'&&i.source.data?.volumeProfile?.available))}));
@@ -76,6 +82,7 @@ export function sanitizeConfluence(analysis,packet){
  for(const e of analysis.confluence){
   const source=packet.sources.find(s=>s.id===e.sourceId),panel=e.panelId===null?null:analysis.panels?.find(p=>p.id===e.panelId&&p.sourceId===e.sourceId);
   if(!levels.some(l=>l.id===e.levelId)||!source||(e.panelId!==null&&!panel)||!families.some(f=>f.id===e.family)||!['supports','opposes','context','unavailable'].includes(e.effect)||!['observation','mechanism','watch'].every(k=>typeof e[k]==='string'&&e[k].trim()))throw Error('Invalid level confluence evidence.');
+  e.family=sourceFamily(source,panel,e.family);
   // One feed can support the immediate level and separately supply context or
   // contrary evidence. Preserve those distinct effects; family counts still
   // deduplicate the source views, and identical effects remain an error.
@@ -89,7 +96,7 @@ export function levelConfluence(read,level,{expirationDate=read.date}={}){
  for(const e of a.confluence||[])if(e.levelId===level.id){
   const source=read.sources.find(s=>s.id===e.sourceId),panel=a.panels?.find(p=>p.id===e.panelId&&p.sourceId===e.sourceId);
   if(!source)continue;const rule=evidenceConstraint(source,panel,read);
-  items.push({...e,effect:rule?.effect||e.effect,scopeNote:rule?.reason||e.scopeNote,source,panel});
+  items.push({...e,family:sourceFamily(source,panel,e.family),effect:rule?.effect||e.effect,scopeNote:rule?.reason||e.scopeNote,source,panel});
  }
  for(const id of level.sourceIds||[]){
   const source=read.sources.find(s=>s.id===id);if(!source||items.some(e=>e.sourceId===id))continue;

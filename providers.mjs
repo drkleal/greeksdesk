@@ -9,7 +9,7 @@ export function normalizeGamma(data,date,selection){
  const actualSlot=eligible.map(r=>r.effectiveDatetime).sort().at(-1)||null;
  const rows=eligible.filter(r=>r.effectiveDatetime===actualSlot).sort((a,b)=>a.price-b.price);
  if(new Set(rows.map(r=>r.price)).size!==rows.length)throw Error('Ambiguous duplicate price rows');
- return {rows,actualSlot,receivedCount:data.length};
+ return {rows,actualSlot,receivedCount:data.length,...(!rows.length?{available:false,message:'No heatmap rows at or before the selected slot in this price range.'}:{})};
 }
 export function createProviderChecks({ env = process.env, request = fetch } = {}) {
   const pending = new Map();

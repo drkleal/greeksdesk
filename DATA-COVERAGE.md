@@ -1,5 +1,15 @@
 # Evidence coverage
 
+## September 11 audit update — current implementation
+
+Older dated sections below describe earlier versions. The current collection is broader: the September 11 authenticated audit displayed 49 source records (including model availability and an unavailable IV Depth placeholder), with 48 data sources used in the attempted analysis. QD exposure requests now use PER_ONE_PERCENT_MOVE, not RAW. OptionsDepth collects 20 metric views plus the IV Depth placeholder; actual uncached request counts vary with fallback and auxiliary requests. The older nine-request description and single optional Gamma description are obsolete.
+
+All 49 returned source records were inspected. Four QD Greek displays each contained 56 expiration summaries and 60 nearby ladder rows with consistent call-plus-put arithmetic; both 60-row options tapes had consistent premium/price/size arithmetic. These are internal consistency checks, not certification of the provider models or complete parity with vendor charts. Databento returned 1,380 ESU6 minute bars, five earlier sessions and a trade-derived profile for September 11. Live intraday latency was not established by this after-close audit.
+
+The live full-analysis attempt was rejected because a generated ES price citation failed validation. The prior September 8 read remained visible and the rejected response was retained for rechecking. The exact erroneous generated field was not exposed in the browser. Do not describe that attempt as a successful new analysis.
+
+Local audit repairs preserve options execution-condition fields and separate cancelled/corrected records; mark successful but empty responses unavailable; restrict empty saved evidence and API-only OD exposure to their proper roles; prevent an API feed from multiplying confluence families through generated labels; and reject out-of-session, duplicate, unaligned or unfinished ES bars and out-of-session quotes. The September 13 release combines these repairs with an independent source-facts summary, explicit archived-plan separation, and weekend session labels. Exact ES source references are resolved by the application instead of transcribed by the model. Validation before deployment: 185 JavaScript tests and 15 Python tests pass; a local browser check confirmed that current facts remain visible through simulated provider and analysis failures. Deployment status is recorded separately in the release report. No predictive performance claim follows from those tests.
+
 Each completed analysis replaces the evidence desk, level key, map and scenarios together. A data-only refresh marks the previous analysis as old. Auto analysis remains opt-in and bounded by its time limit.
 
 ## Quant Data

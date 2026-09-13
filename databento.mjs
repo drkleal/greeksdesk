@@ -40,10 +40,14 @@ export function summarizeES(raw,now=Date.now()){
  if(!raw.ok)return raw;
  if(!/^ES[HMUZ]\d{1,2}$/.test(raw.contract)||raw.dataset!=='GLBX.MDP3'||!validDate(raw.sessionDate)||!Array.isArray(raw.bars)||raw.bars.length>1500)throw Error('Invalid ES response');
  const bars=[...raw.bars].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp));
+ const bounds=esSessionBounds(raw.sessionDate),sessionStart=Date.parse(bounds.start),sessionEnd=Date.parse(bounds.end);
  const ids=new Set(),times=new Set();
  for(const b of bars){
-  if(!['open','high','low','close','volume','instrumentId'].every(k=>Number.isFinite(b[k]))||b.low<=0||b.high<Math.max(b.open,b.close,b.low)||b.low>Math.min(b.open,b.close)||b.volume<0||Date.parse(b.end)-Date.parse(b.timestamp)!==60000||times.has(b.timestamp))throw Error('Invalid ES bars');
-  times.add(b.timestamp);ids.add(b.instrumentId);
+  const start=Date.parse(b.timestamp),end=Date.parse(b.end);
+  if(!['open','high','low','close','volume','instrumentId'].every(k=>Number.isFinite(b[k]))||b.low<=0||b.high<Math.max(b.open,b.close,b.low)||b.low>Math.min(b.open,b.close)||b.volume<0||end-start!==60000||start%60000!==0||times.has(start))throw Error('Invalid ES bars');
+  if(start<sessionStart||end>sessionEnd)throw Error('ES bar outside selected session');
+  if(end>now)throw Error('Future or incomplete ES completed bar');
+  times.add(start);ids.add(b.instrumentId);
  }
  if(ids.size>1)throw Error('Mixed ES contracts');
  const cash=bars.filter(b=>isCashObservation(b.timestamp,raw.sessionDate)&&nyTime(b.timestamp).seconds<cashSession(raw.sessionDate).close);
@@ -54,6 +58,8 @@ export function summarizeES(raw,now=Date.now()){
  const latest=q&&(!last||Date.parse(q.timestamp)>=Date.parse(last.end))?q:last?{price:last.close,timestamp:last.end,intervalStart:last.timestamp,kind:'Completed 1-minute trade bar'}:null;
  const age=latest?(now-Date.parse(latest.timestamp))/1000:null;
  if(age!==null&&age< -5)throw Error('Future ES observation');
+ if(q&&(Date.parse(q.timestamp)<sessionStart||Date.parse(q.timestamp)>sessionEnd))throw Error('ES quote outside selected session');
+ if(!latest)return {ok:false,available:false,count:0,contract:raw.contract,sessionDate:raw.sessionDate,message:'No ES prices returned for the selected session.'};
  let priorContext;try{priorContext=summarizePriorContext(raw.priorContext,raw.contract,raw.sessionDate,last?.instrumentId??q?.instrumentId);}catch{priorContext={available:false,message:'Earlier ES history failed its contract, date or price checks. Current-session data remains available.'};}
  const volumeProfile=validateESProfile(raw.volumeProfile,raw.contract,raw.sessionDate,last?.instrumentId??q?.instrumentId,now);
  return {ok:true,count:bars.length||1,available:true,ticker:'ES',contract:raw.contract,requestedSymbol:raw.requestedSymbol,dataset:raw.dataset,sessionDate:raw.sessionDate,checkedAt:new Date(now).toISOString(),
