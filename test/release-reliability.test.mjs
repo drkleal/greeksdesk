@@ -30,6 +30,19 @@ test('unknown, rolled-contract and conflicting references fail instead of being 
  const changed=structuredClone(packet);changed.sources[0].data.priorContext.contract='ESZ6';
  assert.equal(priceReferenceInput(changed).sources[0].data.priorContext.sessions[0].bars[0].priceReferenceId,undefined);
 });
+test('a numerically valid reference cannot hide a conflicting intended price in the label',()=>{
+ const level=makeLevel(ref('session','high'));level.label='7664.25';
+ assert.throws(()=>validateAnalysis(analysis(level),packet),/label disagrees/);
+ const correct=makeLevel(ref('session','high'));correct.label='ES 7,665.25';
+ assert.equal(validateAnalysis(analysis(correct),packet).levels[0].price,7665.25);
+});
+test('the live wrong-field failure is rejected even when the intended price exists in the same bar',()=>{
+ const input=structuredClone(packet),b=input.sources[0].data.recentBars[0];b.open=7673.75;b.high=7675;b.low=7670;b.close=7672.75;
+ const row=priceReferenceInput(input).sources[0].data.recentBars[0];
+ const level=makeLevel({id:row.priceReferenceId,field:'open'});level.label='7672.75';
+ assert.throws(()=>validateAnalysis(analysis(level),input),/label disagrees/);
+ assert.equal(level.price,7673.75,'do not substitute a nearby value or different OHLC field');
+});
 test('generation uses row-selection schema and saved signed raw references recover without another model call',async()=>{
  let calls=0;const raw=analysis(makeLevel(ref('session','low')));
  const run=createAnalyzer({env:{OPENAI_API_KEY:'fixture'},request:async(url,{body})=>{
