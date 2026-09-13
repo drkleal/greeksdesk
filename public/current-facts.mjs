@@ -30,7 +30,7 @@ export function currentFacts({date,instrument='ES',sources=[],charts=[],read=nul
  const chartNotes=charts.filter(c=>c.sessionDate===date).map(c=>({title:c.title,value:c.observation?.timestamp?'Observed '+when(c.observation.timestamp):'Chart observation time unverified',detail:'Attached '+when(c.capturedAt)+' · fixed image; attachment time is not market time'}));
  const matched=feed?.basisResult;
  const conversion=conversionFor({date,instrument,basis:matched?.ok&&Number.isFinite(matched.basis)?matched.basis:null,sources:selected});
- return {date,clock,facts,available:usable.length,unavailable:missing.length,gaps:missing.map(x=>x.source.title),modelTimes,chartNotes,
+ return {date,clock,facts,available:usable.length,unavailable:missing.length,gaps:[...missing.map(x=>x.source.title),...(structure?.volumeProfile?.available===false?['ES trade profile: '+structure.volumeProfile.message]:[]),...(structure?.priorContext?.available===false?['Earlier ES history: '+structure.priorContext.message]:[])],modelTimes,chartNotes,
   conversion:instrument==='ES'&&conversion.kind!=='unmapped'?(conversion.kind==='anchor'?'Frozen cash-close difference: ':'Matched difference: ')+signed(conversion.basis)+' ES points · '+when(conversion.reference?.esTime||feed?.basisResult?.esTime):'No verified conversion loaded',
   analysis:read?'Analysis snapshot below: '+read.date+' · '+when(read.result.checkedAt)+' · its inputs are preserved separately.':'No analysis has been applied.',
   note:!selected.length?'Use Update data to load this session.':date!==clock.esSession&&instrument==='ES'?'Historical session selected. These are dated observations.':'Source facts come directly from the loaded snapshot for this session. Analysis does not refresh these values; Update data does.'};

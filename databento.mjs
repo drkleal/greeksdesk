@@ -62,7 +62,7 @@ export function summarizeES(raw,now=Date.now()){
  if(!latest)return {ok:false,available:false,count:0,contract:raw.contract,sessionDate:raw.sessionDate,message:'No ES prices returned for the selected session.'};
  let priorContext;try{priorContext=summarizePriorContext(raw.priorContext,raw.contract,raw.sessionDate,last?.instrumentId??q?.instrumentId);}catch{priorContext={available:false,message:'Earlier ES history failed its contract, date or price checks. Current-session data remains available.'};}
  const volumeProfile=validateESProfile(raw.volumeProfile,raw.contract,raw.sessionDate,last?.instrumentId??q?.instrumentId,now);
- return {ok:true,count:bars.length||1,available:true,ticker:'ES',contract:raw.contract,requestedSymbol:raw.requestedSymbol,dataset:raw.dataset,sessionDate:raw.sessionDate,checkedAt:new Date(now).toISOString(),
+ return {ok:true,count:bars.length||1,available:true,partialRequest:raw.partialRequest===true,ticker:'ES',contract:raw.contract,requestedSymbol:raw.requestedSymbol,dataset:raw.dataset,sessionDate:raw.sessionDate,checkedAt:new Date(now).toISOString(),
   latestPrice:latest?.price??null,latestTimestamp:latest?.timestamp??null,priceKind:latest?.kind??null,
   freshness:q&&latest===q&&age>=0&&age<=20?'fresh':esSessionDate(now)===raw.sessionDate?'stale':'historical',ageSeconds:age,
   session:stats(bars),cashSession:stats(cash),recentBars:bars.slice(-120).map(marketClock),averageTrueRange1m:ranges.length===14?ranges.reduce((n,x)=>n+x,0)/14:null,
@@ -84,24 +84,31 @@ export function validateESProfile(profile,contract,date,instrumentId,now=Date.no
  return valid?profile:{available:false,message:'Volume profile failed contract, window or price validation.'};
 }
 
-function worker(input,env){return new Promise(resolve=>{
- const child=spawn(env.DATABENTO_PYTHON||'python3',[fileURLToPath(new URL('./databento_worker.py',import.meta.url))],{windowsHide:true,env:{PATH:env.PATH||env.Path||'',SYSTEMROOT:env.SYSTEMROOT||env.SystemRoot||'',DATABENTO_API_KEY:env.DATABENTO_API_KEY,PYTHONPATH:env.DATABENTO_PYTHONPATH||'',PYTHONUNBUFFERED:'1'},stdio:['pipe','pipe','pipe']});
- let output='',done=false;
+export function createESWorker({launch=spawn,timeoutMs=65000}={}){return (input,env)=>new Promise(resolve=>{
+ const child=launch(env.DATABENTO_PYTHON||'python3',[fileURLToPath(new URL('./databento_worker.py',import.meta.url))],{windowsHide:true,env:{PATH:env.PATH||env.Path||'',SYSTEMROOT:env.SYSTEMROOT||env.SystemRoot||'',DATABENTO_API_KEY:env.DATABENTO_API_KEY,PYTHONPATH:env.DATABENTO_PYTHONPATH||'',PYTHONUNBUFFERED:'1'},stdio:['pipe','pipe','pipe']});
+ let output='',done=false,progress=null,complete=null,malformed=false;
  const finish=r=>{if(done)return;done=true;clearTimeout(timer);resolve(r);};
- const timer=setTimeout(()=>{child.kill();finish({ok:false,message:'ES data request timed out. No automatic retry was made.'});},65000);
- child.stdout.on('data',chunk=>{output+=chunk;if(output.length>1000000){child.kill();finish({ok:false,message:'ES response exceeded the bounded sample size.'});}});
+ const timeoutResult=()=>progress?.ok&&Array.isArray(progress.bars)&&progress.bars.length?{...progress,
+  messages:[...(progress.messages||[]),'ES request reached its time limit. Completed price stages retained; unfinished history/profile or live quote is unavailable. No automatic retry made.'],
+  ...(!progress.priorContext&&!progress.contextReused?{priorContext:{available:false,message:'Earlier history did not finish before the request time limit.'}}:{}),
+  ...(!progress.volumeProfile&&!progress.profileReused?{volumeProfile:{available:false,message:'Trade profile did not finish before the request time limit.'}}:{}),
+  partialRequest:true}:{ok:false,message:'ES data request timed out. No automatic retry was made.'};
+ const timer=setTimeout(()=>{const result=malformed?{ok:false,message:'ES data reader returned an invalid response.'}:complete||timeoutResult();finish(result);child.kill();},timeoutMs);
+ function consume(line){if(!line.trim())return;try{const value=JSON.parse(line);if(value.progress){if(complete)throw Error();progress=value.progress;}else{if(complete)throw Error();complete=value;}}catch{malformed=true;}}
+ child.stdout.on('data',chunk=>{if(done)return;output+=chunk;let index;while((index=output.indexOf('\n'))>=0){const line=output.slice(0,index);output=output.slice(index+1);if(line.length>1000000){finish({ok:false,message:'ES response exceeded the bounded sample size.'});child.kill();return;}consume(line);}if(output.length>1000000){finish({ok:false,message:'ES response exceeded the bounded sample size.'});child.kill();}});
  child.stderr.resume(); // SDK logs are deliberately not relayed to the browser or application logs.
  child.on('error',()=>finish({ok:false,message:'The ES data reader is unavailable in this deployment.'}));
- child.on('close',()=>{try{finish(JSON.parse(output));}catch{finish({ok:false,message:'ES data reader returned an invalid response.'});}});
+ child.on('close',()=>{consume(output);finish(!malformed&&complete?complete:{ok:false,message:'ES data reader returned an invalid response.'});});
  child.stdin.on('error',()=>{});child.stdin.end(JSON.stringify(input));
 });}
+const worker=createESWorker();
 
 export function createDatabento({env=process.env,run=worker,now=Date.now}={}){
  const cache=new Map(),contextCache=new Map(),profileCache=new Map();let pending=null;
  return async(date,symbol=env.DATABENTO_ES_SYMBOL||'ES.v.0')=>{
   if(!validDate(date)||!/^ES(?:\.v\.0|[HMUZ]\d{1,2})$/.test(symbol))throw Error('Select a valid ES contract and date.');
   if(!env.DATABENTO_API_KEY)return {ok:false,configured:false,message:'Databento key is not configured.'};
-  const key=date+'|'+symbol,old=cache.get(key),ttl=date===esSessionDate(now())?15000:3600000;
+  const key=date+'|'+symbol,old=cache.get(key),ttl=old?.result.partialRequest||date===esSessionDate(now())?15000:3600000;
   if(old&&now()-old.at<ttl){const result=structuredClone(old.result);if(result.latestTimestamp){result.ageSeconds=(now()-Date.parse(result.latestTimestamp))/1000;if(result.freshness==='fresh'&&result.ageSeconds>20)result.freshness='stale';}return {...result,cached:true};}
   if(pending)return {ok:false,message:'An ES market-data read is already running.'};
   pending=key;try{

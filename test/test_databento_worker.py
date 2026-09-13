@@ -5,6 +5,30 @@ from datetime import date, datetime, timezone
 from databento_worker import bar, market_window, safe_error, resolve_contract, read_prior_context, read_live, read
 
 class WorkerTests(unittest.TestCase):
+    def test_completed_prices_are_emitted_before_optional_profile_work(self):
+        import json
+        import databento_worker as worker
+        moment = datetime(2026, 9, 13, 12, 0, tzinfo=timezone.utc)
+        class Clock(datetime):
+            @classmethod
+            def now(cls, tz=None): return moment
+        record = SimpleNamespace(ts_event=int(datetime(2026,9,11,19,0,tzinfo=timezone.utc).timestamp()*1e9),
+            open=7660000000000, high=7662000000000, low=7659000000000, close=7661000000000, volume=10, instrument_id=12)
+        client = SimpleNamespace(metadata=SimpleNamespace(get_dataset_range=lambda **kw:{'end':'2026-09-12T00:00:00Z'},get_cost=lambda **kw:0),
+            timeseries=SimpleNamespace(get_range=lambda **kw:[record]))
+        db = SimpleNamespace(Historical=lambda:client,OHLCVMsg=SimpleNamespace)
+        snapshots=[]
+        with patch.dict('sys.modules',{'databento':db}), patch.object(worker,'datetime',Clock), \
+             patch.object(worker,'read_prior_context',return_value={'available':False,'message':'fixture'}), \
+             patch.object(worker,'read_profile',side_effect=TimeoutError('slow enrichment')):
+            with self.assertRaises(TimeoutError):
+                read({'date':'2026-09-11','symbol':'ESU6','cash_close':'2026-09-11T20:00:00Z'},
+                     on_progress=lambda value:snapshots.append(json.loads(json.dumps(value))))
+        self.assertEqual(len(snapshots),2)
+        self.assertEqual(snapshots[0]['bars'][0]['close'],7661)
+        self.assertNotIn('priorContext',snapshots[0])
+        self.assertFalse(snapshots[1]['priorContext']['available'])
+
     def test_live_only_read_survives_historical_mapping_rejection(self):
         import databento_worker as worker
         moment = datetime(2026, 9, 9, 14, 0, tzinfo=timezone.utc)

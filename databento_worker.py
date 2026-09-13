@@ -160,7 +160,7 @@ def read_live(db, symbol, now):
     return {'quote': None, 'messages': messages}
 
 
-def read(request):
+def read(request, on_progress=None):
     import databento as db
     date = datetime.strptime(request['date'], '%Y-%m-%d').date()
     symbol = request.get('symbol', 'ES.v.0')
@@ -217,6 +217,10 @@ def read(request):
     except Exception as exc:
         result['messages'].append(safe_error(exc))
 
+    # Completed price/history stages can survive a slower optional request.
+    # The parent still validates every emitted snapshot before using it.
+    if on_progress and result['bars']:
+        on_progress(result)
     if request.get('cached_context_contract') == raw_symbol:
         result['contextReused'] = True
     elif available:
@@ -225,12 +229,16 @@ def read(request):
     else:
         result['priorContext'] = {'available': False, 'message': 'Earlier ES history availability could not be checked.'}
 
+    if on_progress and result['bars']:
+        on_progress(result)
     if request.get('cached_profile_contract') == raw_symbol:
         result['profileReused'] = True
     elif available and request.get('cash_close'):
         spent = result.get('estimatedHistoryCostUSD', 0) + result.get('priorContext', {}).get('estimatedCostUSD', 0)
         result['volumeProfile'] = read_profile(historical, raw_symbol, start, end, available, parse_time(request['cash_close']), spent)
 
+    if on_progress and result['bars']:
+        on_progress(result)
     if start <= now < end and market_window(now):
         live_result = read_live(db, raw_symbol, now)
         result['quote'] = live_result.get('quote')
@@ -243,7 +251,9 @@ def read(request):
 if __name__ == '__main__':
     logging.disable(logging.CRITICAL)
     try:
-        output = read(json.loads(sys.stdin.read(2000)))
+        def progress(value):
+            print(json.dumps({'progress': value}, allow_nan=False, separators=(',', ':')), flush=True)
+        output = read(json.loads(sys.stdin.read(2000)), on_progress=progress)
     except Exception as error:
         output = {'ok': False, 'message': safe_error(error)}
     print(json.dumps(output, allow_nan=False, separators=(',', ':')), flush=True)
