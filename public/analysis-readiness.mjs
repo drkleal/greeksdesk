@@ -1,5 +1,6 @@
+import {isDeepGamma} from './gamma-freshness.mjs';
 export function analysisReadiness(sources,instrument,date){
- const selected=sources.filter(s=>s.sessionDate===date);
+ const selected=sources.filter(s=>s.sessionDate===date||isDeepGamma(s));
  const images=selected.filter(s=>s.image).length;
  const es=selected.find(s=>s.id==='databento')?.data;
  const nativeES=es?.available===true&&es.ticker==='ES'&&es.dataset==='GLBX.MDP3'&&/^ES[HMUZ]\d{1,2}$/.test(es.contract)&&Array.isArray(es.recentBars)&&(es.recentBars.length>0||es.priorContext?.available===true);

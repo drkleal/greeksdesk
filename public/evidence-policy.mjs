@@ -1,3 +1,4 @@
+import {freshnessConstraint} from './gamma-freshness.mjs';
 import {noObservations} from './data-availability.mjs';
 export const evidencePolicyVersion=2;
 
@@ -10,6 +11,7 @@ export function sourceInstrument(source,panel){
 
 // These constraints also apply when opening a saved read in the browser.
 export function evidenceConstraint(source,panel,packet){
+ const freshness=freshnessConstraint(source,packet);if(freshness)return freshness;
  if(source?.data?.chartScope==='multi_day_context')return {effect:'context',reason:'User-supplied multi-day volume profile: background context only. Composite VAH/VAL are not chart levels or independent confirmation.'};
  if(source?.data?.available===false||source?.data?.ok===false||(!source?.image&&!panel&&noObservations(source?.data))||panel?.status==='excluded')return {effect:'unavailable',reason:'This source was unavailable, empty or excluded from this read. It cannot confirm or oppose the setup.'};
  if(panel?.dateRole==='projected_session')return {effect:'context',reason:'Forward model for '+panel.observedDate+'; planning context only, not observed price response in the '+packet.date+' session.'};

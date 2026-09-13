@@ -7,7 +7,7 @@ import {createServer} from '../server.mjs';
 const secret='recovery-test-secret',date='2026-09-09';
 const image='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jC1sAAAAASUVORK5CYII=';
 const chartIds=['paste-dg','es-snapshot','es-five-minute','paste-vp','paste-vp-prior','paste-vp-composite'];
-const packet=validatePacket({date,instrument:'ES',basis:null,sources:chartIds.map(id=>({id,title:id,sessionDate:date,image}))});
+const packet=validatePacket({date,instrument:'ES',basis:null,sources:chartIds.map(id=>({id,title:id,sessionDate:date,capturedAt:'2026-09-09T11:40:00Z',image}))});
 const panels=chartIds.map((sourceId,i)=>({id:'p'+i,sourceId,title:sourceId,capturedPanelId:null,instrument:'ES',instrumentEvidence:'contract_header',instrumentLabel:'ESU6',metricUnits:'points',observedDate:date,dateEvidence:'visible',dateRole:'observed_session',status:i>=4?'context':'usable',reason:'Regression fixture',shows:'Regression fixture',region:{x:0,y:0,width:1,height:1}}));
 const level=(id,price,role='structure')=>({id,price,role,kind:'reference',label:id,identity:{category:role==='structure'?'structure':'provider',name:id,sourceLabel:role==='structure'?null:'HVN',description:'Regression fixture',derivation:'Regression fixture'},sourceIds:['es-snapshot'],panelIds:['p1'],evidence:'Regression fixture',watch:'Observe',invalidation:'Failure'});
 const analysis={headline:'Fixture',summary:'Fixture',gaps:[],changes:[],panels,levels:[level('low',7650),level('high',7670)],checkpoints:[level('hvn',7660,'model_reference')],confluence:[],sources:chartIds.map(id=>({id,shows:'Fixture finding',importance:'Fixture',lookFor:'Fixture'})),scenarios:['up','down','neutral'].map(direction=>({direction,status:'conditional',triggerId:direction==='down'?'high':'low',targetId:direction==='down'?'low':'high',condition:'Observe boundaries',confirmation:'Observe response',invalidation:'Failure',rationale:'Fixture',continuation:{targetId:null,condition:'None',confirmation:'None',invalidation:'None',rationale:'None'}}))};
@@ -34,7 +34,7 @@ test('signed recovery preserves the exact snapshot and cannot accept modified da
 
 test('authenticated HTTP recovery processes all six fixture images with zero generation calls and rejects cross-site requests',async()=>{
  let calls=0;
- const server=createServer(secret,{analysisOptions:{env:{OPENAI_API_KEY:'test'},request:async()=>{calls++;throw Error('No generation expected');}}});
+ const server=createServer(secret,{analysisOptions:{now:()=>Date.parse('2026-09-09T11:45:00Z'),env:{OPENAI_API_KEY:'test'},request:async()=>{calls++;throw Error('No generation expected');}}});
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  const base='http://127.0.0.1:'+server.address().port,headers={Authorization:'Basic '+Buffer.from('drkleal:'+secret).toString('base64'),'Content-Type':'application/json','X-GreeksDesk-Action':'manual-check'};
  const body=JSON.stringify({packet,recovery:createAnalysisRecovery({secret}).issue(review)});
@@ -48,7 +48,7 @@ test('authenticated HTTP recovery processes all six fixture images with zero gen
 
 test('a failed generation returns a signed, unapplied recovery receipt and rechecking never regenerates it',async()=>{
  let calls=0;const invalid=structuredClone(analysis);invalid.levels[0].sourceIds=['invented'];
- const server=createServer(secret,{analysisOptions:{env:{OPENAI_API_KEY:'test'},request:async()=>{calls++;return {ok:true,json:async()=>({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify(invalid)}]}],usage:{input_tokens:10,output_tokens:20}})};}}});
+ const server=createServer(secret,{analysisOptions:{now:()=>Date.parse('2026-09-09T11:45:00Z'),env:{OPENAI_API_KEY:'test'},request:async()=>{calls++;return {ok:true,json:async()=>({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify(invalid)}]}],usage:{input_tokens:10,output_tokens:20}})};}}});
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  const base='http://127.0.0.1:'+server.address().port,headers={Authorization:'Basic '+Buffer.from('drkleal:'+secret).toString('base64'),'Content-Type':'application/json','X-GreeksDesk-Action':'manual-check'};
  try{

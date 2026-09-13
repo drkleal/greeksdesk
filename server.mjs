@@ -106,7 +106,7 @@ export function createServer(password = process.env.DESK_PASSWORD, {analysisOpti
     scripts['/price-evidence.mjs']='./public/price-evidence.mjs';
     scripts['/current-facts.mjs']='./public/current-facts.mjs';
     scripts['/data-availability.mjs']='./public/data-availability.mjs';
-    for(const asset of ['basis-display.mjs','workbench.mjs','confluence.mjs','workbench.css','chart-intake.mjs','chart-restore.mjs','analysis-readiness.mjs','level-board.mjs','straddle.mjs','straddle-panel.mjs','verification.mjs','level-brief.mjs','exposure-display.mjs','source-status.mjs'])scripts['/'+asset]='./public/'+asset;
+    for(const asset of ['basis-display.mjs','workbench.mjs','confluence.mjs','workbench.css','chart-intake.mjs','chart-restore.mjs','analysis-readiness.mjs','level-board.mjs','straddle.mjs','straddle-panel.mjs','verification.mjs','level-brief.mjs','exposure-display.mjs','source-status.mjs','gamma-freshness.mjs'])scripts['/'+asset]='./public/'+asset;
     if (!['/', '/index.html', '/preview', '/connections', '/connector', '/chart-connector.zip', ...Object.keys(scripts)].includes(req.url)) {
       res.writeHead(404);
       return res.end('Not found');

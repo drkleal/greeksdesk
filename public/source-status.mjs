@@ -1,3 +1,4 @@
+import {evaluateFreshness,gammaObservation} from './gamma-freshness.mjs';
 import {cashSession,nyTime,marketClock} from './session.mjs';
 import {noObservations} from './data-availability.mjs';
 
@@ -9,14 +10,16 @@ export function sourceStatus(source,date,now=Date.now()){
  if(d.available===false||d.ok===false)return {...base,state:'unavailable',label:'Unavailable',detail:d.message||'No usable data returned on this update.'};
  if(noObservations(d))return {...base,state:'unavailable',label:'No observations returned',detail:'This source supplies no data for the selected request.'};
  if(d.snapshotFallback)return {...base,label:'Earlier model snapshot',detail:`Using ${d.actualSlot||d.collectionSlot} (provider time coordinate). The selected after-close snapshot was empty; this is dated context, not live dealer activity.`};
- if(source.id==='timestamps'||source.id.startsWith('od-')||source.id==='gamma')return {...base,label:'Model context',detail:'Model time coordinates are not verified update times. Do not treat this as confirmation of new dealer activity.'};
+ if(source.id.startsWith('od-')||source.id==='gamma'){const o=gammaObservation(source,now);return {...base,label:o.timestamp?'Model slot · '+Math.floor(o.ageMinutes)+' min old':'Model slot age unverified',detail:(o.timestamp?when(Date.parse(o.timestamp))+'. ':'')+(o.assumption?o.assumption+'. ':'')+'A returned slot is a model coordinate, not proof of a new update or dealer activity.'};}
+ if(source.id==='timestamps')return {...base,label:'Model context',detail:'Model time coordinates are not verified update times. Do not treat this as confirmation of new dealer activity.'};
  if(['databento','massive-es'].includes(source.id)){
   const t=time(d.latestTimestamp),age=(now-t)/1000,fresh=d.freshness==='fresh'&&age>=0&&age<=20;
   return {...base,state:fresh?'fresh':'context',label:fresh?'Fresh ES observation':'ES price is not live',detail:(Number.isFinite(t)?`${d.contract||'ES'} ${d.latestPrice} · ${when(t)}. `:'No verified ES timestamp. ')+(d.messages||[]).join(' ')};
  }
  const rows=d.rows||[],recent=d.recentBuckets||[];
  const tradeTimes=rows.map(r=>time(r.tradeTime)).filter(Number.isFinite);
- const t=tradeTimes.length?Math.max(...tradeTimes):time(d.latestTimestamp);
+ const bucket=gammaObservation(source,now);
+ const t=tradeTimes.length?Math.max(...tradeTimes):time(bucket.timestamp);
  if(Number.isFinite(t)){
   const sameDay=nyTime(t)?.date===date,age=(now-t)/1000,fresh=sameDay&&age>=0&&age<=180;
   const cashClosed=!marketClock(now).cashOpen;
@@ -31,10 +34,12 @@ export function renderSourceStatus(host,date,sources,now=Date.now()){
  const make=(tag,text,cls)=>{const n=document.createElement(tag);n.textContent=text;if(cls)n.className=cls;return n;};
  host.replaceChildren(make('h2','Source freshness · '+date));
  host.append(make('p',!cashSession(date)?'Cash market closed. Futures and eligible overnight options can still trade. Each source must establish its own observation time.':'Source observations and analysis update separately. A fresh quote does not refresh an older trade plan.','muted'));
+ const freshness=evaluateFreshness(sources,now),strip=make('p',freshness.deepGamma.label+' · '+freshness.deepGamma.reason,'gamma-freshness-strip');strip.dataset.band=freshness.deepGamma.band;host.append(strip);
+ if(freshness.leader)host.append(make('p','Gamma comparison lead: '+freshness.leader.title+' ('+freshness.leader.kind+'). Paste/slot age does not establish the last underlying update.','muted'));
  if(!sources.length){host.append(make('p','Use Update data to check this session. No current source observations have been loaded.'));return;}
  const fallback=sources.find(s=>s.data?.snapshotFallback&&s.data.available);
  if(fallback)host.append(make('p','OptionsDepth positions: using '+(fallback.data.actualSlot||fallback.data.collectionSlot)+' because the selected after-close snapshot was empty. Heatmaps keep their separately requested time.','muted'));
  const grid=make('div','','source-freshness-grid'),more=make('details'),rest=make('div','','source-freshness-grid');let extra=0;
- for(const source of sources){const s=sourceStatus(source,date,now),card=make('article','',`source-freshness-card ${s.state}`);card.append(make('strong',s.title),make('b',s.label),make('p',s.detail));if(['databento','massive-es','quantdata','timestamps','qd-order-flow-unconsolidated'].includes(source.id))grid.append(card);else{rest.append(card);extra++;}}
+ for(const source of sources.filter(s=>!s.image)){const s=sourceStatus(source,date,now),card=make('article','',`source-freshness-card ${s.state}`);card.append(make('strong',s.title),make('b',s.label),make('p',s.detail));if(['databento','massive-es','quantdata','timestamps','qd-order-flow-unconsolidated'].includes(source.id))grid.append(card);else{rest.append(card);extra++;}}
  host.append(grid);if(extra){more.open=!!expanded;more.append(make('summary',`Check timestamps for ${extra} other panels`),rest);host.append(more);}
 }

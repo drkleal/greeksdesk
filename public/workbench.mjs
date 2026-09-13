@@ -16,6 +16,7 @@ export function markWorkbenchOld(host){const notice=host?.querySelector('.wb-rea
 export function refreshWorkbenchMarketData(host,date,sources){host?.querySelector('.wb-confluence-board')?.dispatchEvent(new CustomEvent('straddle-update',{detail:{date,sources}}));}
 export function renderWorkbench(host,read,{panelButton,chartButton}={}){
  host.replaceChildren();const a=read.result.analysis,feed=selectESSource(read.sources)?.data||{},conversion=conversionFor(read),inventory=familyInventory(read),columns=exposureColumns(read);
+ const freshness=read.result.freshness;host.append(el('p',freshness?freshness.deepGamma.label+' · At read start '+new Date(freshness.evaluatedAt).toLocaleString('en-US',{timeZone:'America/New_York'})+' ET. '+freshness.deepGamma.reason:'Saved read predates the Deep Gamma freshness rule. Run a new analysis to assess its permitted scope.','gamma-freshness-strip'));
  const dialog=el('dialog',undefined,'wb-inspector');
  const close=button('Close ×',()=>dialog.close(),'wb-close'),body=el('div',undefined,'wb-inspector-body');dialog.append(close,body);host.append(dialog);
  dialog.addEventListener('click',e=>{if(e.target===dialog)dialog.close();});
